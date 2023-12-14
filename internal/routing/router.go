@@ -29,8 +29,9 @@ func InitRouter(pool *pgxpool.Pool) *chi.Mux {
 
 	r.Route("/api/v1/users", func(r chi.Router) {
 		r.Post("/", userHdl.RegisterUser)
+		r.Post("/login", userHdl.LoginUser)
 		r.Post("/{username}/activate", userHdl.ActivateUser)
-		r.Delete("/{username}/deactivate", userHdl.ResendToken)
+		r.Delete("/{username}/activate", userHdl.ResendToken)
 	})
 
 	return r

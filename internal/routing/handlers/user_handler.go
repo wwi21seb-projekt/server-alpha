@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/jackc/pgx/v5"
-	"log"
+	"github.com/jackc/pgx/v5/pgtype"
 	"math/rand"
 	"net/http"
 	"strconv"
@@ -24,6 +24,7 @@ type UserHdl interface {
 	RegisterUser(w http.ResponseWriter, r *http.Request)
 	ActivateUser(w http.ResponseWriter, r *http.Request)
 	ResendToken(w http.ResponseWriter, r *http.Request)
+	LoginUser(w http.ResponseWriter, r *http.Request)
 }
 
 type UserHandler struct {
@@ -32,14 +33,21 @@ type UserHandler struct {
 	Validator       *utils.Validator
 }
 
+func NewUserHandler(databaseManager *managers.DatabaseMgr, mailManager *managers.MailMgr) UserHdl {
+	return &UserHandler{
+		DatabaseManager: *databaseManager,
+		MailManager:     *mailManager,
+		Validator:       utils.GetValidator(),
+	}
+}
+
 func (handler *UserHandler) RegisterUser(w http.ResponseWriter, r *http.Request) {
 	// Begin a new transaction
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
 	if tx == nil || transactionCtx == nil {
 		return
 	}
-	defer utils.RollbackTransaction(w, tx, transactionCtx)
-	defer cancel()
+	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel)
 
 	// Decode the request body into the registration request struct
 	registrationRequest := &schemas.RegistrationRequest{}
@@ -59,13 +67,13 @@ func (handler *UserHandler) RegisterUser(w http.ResponseWriter, r *http.Request)
 
 	// Check if the email exists
 	if !handler.Validator.VerifyEmail(registrationRequest.Email) {
-		utils.WriteAndLogError(w, schemas.EmailUnreachable, http.StatusBadRequest)
+		utils.WriteAndLogError(w, schemas.EmailUnreachable, http.StatusBadRequest, errors.New("body invalid"))
 		return
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(registrationRequest.Password), bcrypt.DefaultCost)
 	if err != nil {
-		utils.WriteAndLogError(w, schemas.InternalServerError, http.StatusInternalServerError)
+		utils.WriteAndLogError(w, schemas.InternalServerError, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -76,20 +84,19 @@ func (handler *UserHandler) RegisterUser(w http.ResponseWriter, r *http.Request)
 
 	queryString := "INSERT INTO users (user_id, username, nickname, email, password, created_at, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7)"
 	if _, err := tx.Exec(transactionCtx, queryString, userId, registrationRequest.Username, registrationRequest.Nickname, registrationRequest.Email, hashedPassword, createdAt, expiresAt); err != nil {
-		log.Println("err 1")
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError)
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
-	log.Println("I'm here 3")
 
 	// Generate a token for the user
 	if err := generateAndSendToken(w, handler, tx, transactionCtx, registrationRequest.Email, registrationRequest.Username, userId.String()); err != nil {
 		return
 	}
-	log.Println("I'm here 4")
 
 	// Commit the transaction
-	utils.CommitTransaction(w, tx, transactionCtx)
+	if err := utils.CommitTransaction(w, tx, transactionCtx, cancel); err != nil {
+		return
+	}
 
 	// Send success response
 	w.WriteHeader(http.StatusCreated)
@@ -111,8 +118,7 @@ func (handler *UserHandler) ActivateUser(w http.ResponseWriter, r *http.Request)
 	if tx == nil || transactionCtx == nil {
 		return
 	}
-	defer utils.RollbackTransaction(w, tx, transactionCtx)
-	defer cancel()
+	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel)
 
 	// Decode the request body into the activation request struct
 	activationRequest := &schemas.ActivationRequest{}
@@ -128,22 +134,8 @@ func (handler *UserHandler) ActivateUser(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Get the user ID
-	queryString := "SELECT user_id FROM users WHERE username = $1"
-	rows, err := tx.Query(transactionCtx, queryString, username)
-	if err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError)
-		return
-	}
-
-	var userID uuid.UUID
-	if rows.Next() {
-		if err := rows.Scan(&userID); err != nil {
-			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError)
-			return
-		}
-	} else {
-		utils.WriteAndLogError(w, schemas.UserNotFound, http.StatusNotFound)
+	_, userID, errorOccurred := retrieveUserIdAndEmail(w, tx, transactionCtx, username)
+	if errorOccurred {
 		return
 	}
 
@@ -153,20 +145,22 @@ func (handler *UserHandler) ActivateUser(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Activate the user
-	queryString = "UPDATE users SET activated_at = $1 WHERE user_id = $2"
+	queryString := "UPDATE users SET activated_at = $1 WHERE user_id = $2"
 	if _, err := tx.Exec(transactionCtx, queryString, time.Now(), userID); err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError)
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
 	// Delete the token
 	queryString = "DELETE FROM user_token WHERE token = $1"
 	if _, err := tx.Exec(transactionCtx, queryString, activationRequest.Token); err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError)
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
-	utils.CommitTransaction(w, tx, transactionCtx)
+	if err := utils.CommitTransaction(w, tx, transactionCtx, cancel); err != nil {
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -176,60 +170,126 @@ func (handler *UserHandler) ResendToken(w http.ResponseWriter, r *http.Request) 
 	if tx == nil || transactionCtx == nil {
 		return
 	}
-	defer utils.RollbackTransaction(w, tx, transactionCtx)
-	defer cancel()
+	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel)
 
 	// Get username from path
 	username := chi.URLParam(r, "username")
 
-	// Check if the user exists
-	if err := checkUserExistence(w, tx, transactionCtx, username); err != nil {
+	email, userId, errorOccurred := retrieveUserIdAndEmail(w, tx, transactionCtx, username)
+	if errorOccurred {
 		return
 	}
 
 	// Check if the user is activated
-	if err, activated := checkUserActivation(w, tx, transactionCtx, username); err != nil {
+	if err, _, activated := checkUserExistenceAndActivation(w, tx, transactionCtx, username); err != nil {
 		return
 	} else if activated {
-		utils.WriteAndLogError(w, schemas.UserAlreadyActivated, http.StatusBadRequest)
+		utils.WriteAndLogError(w, schemas.UserAlreadyActivated, http.StatusAlreadyReported, errors.New("already activated"))
 		return
-	}
-
-	// Get the user's email
-	queryString := "SELECT email, user_id FROM users WHERE username = $1"
-	rows, err := tx.Query(transactionCtx, queryString, username)
-	if err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError)
-		return
-	}
-
-	var email string
-	var userId string
-	if rows.Next() {
-		if err := rows.Scan(&email, &userId); err != nil {
-			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError)
-			return
-		}
 	}
 
 	// Generate a new token and send it to the user
-	if err := generateAndSendToken(w, handler, tx, transactionCtx, email, username, userId); err != nil {
+	if err := generateAndSendToken(w, handler, tx, transactionCtx, email, username, userId.String()); err != nil {
 		return
 	}
 
 	// Commit the transaction
-	utils.CommitTransaction(w, tx, transactionCtx)
+	if err := utils.CommitTransaction(w, tx, transactionCtx, cancel); err != nil {
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (handler *UserHandler) LoginUser(w http.ResponseWriter, r *http.Request) {
+	// Begin a new transaction
+	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
+	if tx == nil || transactionCtx == nil {
+		return
+	}
+	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel)
+
+	// Decode the request body into the login request struct
+	loginRequest := &schemas.LoginRequest{}
+	if err := utils.DecodeRequestBody(w, r, loginRequest); err != nil {
+		return
+	}
+
+	// Validate the registration request struct using the validator
+	if err := utils.ValidateStruct(w, loginRequest); err != nil {
+		return
+	}
+
+	// Check if user exists and if yes, if he is activated
+	err, exists, activated := checkUserExistenceAndActivation(w, tx, transactionCtx, loginRequest.Username)
+	if err != nil {
+		return
+	}
+
+	if !exists {
+		utils.WriteAndLogError(w, schemas.InvalidCredentials, 404, errors.New("username does not exist"))
+		return
+	}
+
+	if !activated {
+		utils.WriteAndLogError(w, schemas.UserNotActivated, 403, errors.New("user not activated"))
+		return
+	}
+
+	// Check if password matches
+	queryString := "SELECT password FROM users WHERE username = $1"
+	rows, err := tx.Query(transactionCtx, queryString, loginRequest.Username)
+	defer rows.Close()
+	if err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+
+	var password string
+	rows.Next() // We already asserted existence earlier, so we can assume that the row exists
+
+	if err := rows.Scan(&password); err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(password), []byte(loginRequest.Password)); err != nil {
+		utils.WriteAndLogError(w, schemas.InvalidCredentials, http.StatusInternalServerError, err)
+		return
+	}
+
+	w.WriteHeader(200)
+}
+
+func retrieveUserIdAndEmail(w http.ResponseWriter, tx pgx.Tx, transactionCtx context.Context, username string) (string, uuid.UUID, bool) {
+	// Get the user ID
+	queryString := "SELECT email, user_id FROM users WHERE username = $1"
+	rows, err := tx.Query(transactionCtx, queryString, username)
+	defer rows.Close()
+	if err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return "", uuid.UUID{}, true
+	}
+
+	var email string
+	var userID uuid.UUID
+	if rows.Next() {
+		if err := rows.Scan(&email, &userID); err != nil {
+			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+			return "", uuid.UUID{}, true
+		}
+	} else {
+		utils.WriteAndLogError(w, schemas.UserNotFound, http.StatusNotFound, errors.New("user not found"))
+		return "", uuid.UUID{}, true
+	}
+
+	return email, userID, false
 }
 
 func checkUsernameEmailTaken(w http.ResponseWriter, tx pgx.Tx, ctx context.Context, username, email string) error {
 	queryString := "SELECT username, email FROM users WHERE username = $1 OR email = $2"
 	rows, err := tx.Query(ctx, queryString, username, email)
-	log.Println("I'm here")
 	if err != nil {
-		log.Println("error is here")
-		log.Println(err)
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError)
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return err
 	}
 	defer rows.Close()
@@ -239,11 +299,9 @@ func checkUsernameEmailTaken(w http.ResponseWriter, tx pgx.Tx, ctx context.Conte
 		var foundEmail string
 
 		if err := rows.Scan(&foundUsername, &foundEmail); err != nil {
-			log.Println("?!?!?")
-			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError)
+			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 			return err
 		}
-		log.Println("I'm here 2")
 
 		customErr := &schemas.CustomError{}
 		if foundUsername == username {
@@ -252,8 +310,9 @@ func checkUsernameEmailTaken(w http.ResponseWriter, tx pgx.Tx, ctx context.Conte
 			customErr = schemas.EmailTaken
 		}
 
-		utils.WriteAndLogError(w, customErr, http.StatusConflict)
-		return errors.New("username or email taken")
+		err = errors.New("username or email taken")
+		utils.WriteAndLogError(w, customErr, http.StatusConflict, err)
+		return err
 	}
 
 	return nil
@@ -263,52 +322,39 @@ func checkTokenValidity(w http.ResponseWriter, tx pgx.Tx, ctx context.Context, t
 	queryString := "SELECT user_id FROM user_token WHERE token = $1 AND user_id = (SELECT user_id FROM users WHERE username = $2)"
 	rows, err := tx.Query(ctx, queryString, token, username)
 	if err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError)
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return err
 	}
 	defer rows.Close()
 
 	if !rows.Next() {
-		utils.WriteAndLogError(w, schemas.InvalidToken, http.StatusUnauthorized)
+		utils.WriteAndLogError(w, schemas.InvalidToken, http.StatusUnauthorized, errors.New("invalid token"))
 		return errors.New("invalid token")
 	}
 
 	return nil
 }
 
-func checkUserExistence(w http.ResponseWriter, tx pgx.Tx, ctx context.Context, username string) error {
-	queryString := "SELECT user_id FROM users WHERE username = $1"
-	rows, err := tx.Query(ctx, queryString, username)
-	if err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError)
-		return err
-	}
-	defer rows.Close()
-
-	if !rows.Next() {
-		utils.WriteAndLogError(w, schemas.UserNotFound, http.StatusNotFound)
-		return errors.New("user not found")
-	}
-
-	return nil
-}
-
-func checkUserActivation(w http.ResponseWriter, tx pgx.Tx, ctx context.Context, username string) (error, bool) {
+func checkUserExistenceAndActivation(w http.ResponseWriter, tx pgx.Tx, ctx context.Context, username string) (error, bool, bool) {
 	queryString := "SELECT activated_at FROM users WHERE username = $1"
 	rows, err := tx.Query(ctx, queryString, username)
 	if err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError)
-		return err, false
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return err, false, false
 	}
 	defer rows.Close()
 
-	var activatedAt *time.Time
-	if err := rows.Scan(&activatedAt); err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError)
-		return err, false
+	var activatedAt pgtype.Timestamptz
+	if rows.Next() {
+		if err := rows.Scan(&activatedAt); err != nil {
+			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+			return err, false, false
+		}
+	} else {
+		return nil, false, false
 	}
 
-	return nil, activatedAt != nil
+	return nil, true, !activatedAt.Time.IsZero() && activatedAt.Valid
 }
 
 func generateAndSendToken(w http.ResponseWriter, handler *UserHandler, tx pgx.Tx, ctx context.Context, email, username, userId string) error {
@@ -320,19 +366,19 @@ func generateAndSendToken(w http.ResponseWriter, handler *UserHandler, tx pgx.Tx
 	// Delete the old token if it exists
 	queryString := "DELETE FROM user_token WHERE user_id = $1"
 	if _, err := tx.Exec(ctx, queryString, userId); err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError)
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return err
 	}
 
 	queryString = "INSERT INTO user_token (token_id, user_id, token, expires_at) VALUES ($1, $2, $3, $4)"
 	if _, err := tx.Exec(ctx, queryString, tokenID, userId, token, tokenExpiresAt); err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError)
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return err
 	}
 
 	// Send the token to the user
 	if err := handler.MailManager.SendActivationMail(email, username, token, "UI-Service"); err != nil {
-		utils.WriteAndLogError(w, schemas.EmailNotSent, http.StatusInternalServerError)
+		utils.WriteAndLogError(w, schemas.EmailNotSent, http.StatusInternalServerError, err)
 		return err
 	}
 
@@ -344,12 +390,4 @@ func generateToken() string {
 
 	// Generate a random 6-digit number
 	return strconv.Itoa(rand.Intn(900000) + 100000)
-}
-
-func NewUserHandler(databaseManager *managers.DatabaseMgr, mailManager *managers.MailMgr) UserHdl {
-	return &UserHandler{
-		DatabaseManager: *databaseManager,
-		MailManager:     *mailManager,
-		Validator:       utils.GetValidator(),
-	}
 }

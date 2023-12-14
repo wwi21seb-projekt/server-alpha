@@ -107,7 +107,17 @@ func initializeDatabase() (*pgxpool.Pool, error) {
 	)
 
 	url := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable", dbHost, dbPort, dbUser, dbPassword, dbName)
-	pool, err := pgxpool.New(context.Background(), url)
+	config, err := pgxpool.ParseConfig(url)
+	if err != nil {
+		return nil, err
+	}
+
+	config.MinConns = 5
+	config.MaxConns = 30
+	config.MaxConnIdleTime = time.Minute * 2
+	config.HealthCheckPeriod = time.Minute * 1
+
+	pool, err := pgxpool.NewWithConfig(context.Background(), config)
 	if err != nil {
 		log.Fatal("Error connecting to database: ", err)
 		return nil, err
