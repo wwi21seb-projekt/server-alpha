@@ -61,7 +61,7 @@ func (handler *UserHandler) RegisterUser(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Check if the username or email is taken
-	if err := checkUsernameEmailTaken(w, tx, transactionCtx, registrationRequest.Username, registrationRequest.Email); err != nil {
+	if err := checkUsernameEmailTaken(transactionCtx, w, tx, registrationRequest.Username, registrationRequest.Email); err != nil {
 		return
 	}
 
@@ -134,13 +134,13 @@ func (handler *UserHandler) ActivateUser(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	_, userID, errorOccurred := retrieveUserIdAndEmail(w, tx, transactionCtx, username)
+	_, userID, errorOccurred := retrieveUserIdAndEmail(transactionCtx, w, tx, username)
 	if errorOccurred {
 		return
 	}
 
 	// Check if the token is valid
-	if err := checkTokenValidity(w, tx, transactionCtx, activationRequest.Token, username); err != nil {
+	if err := checkTokenValidity(transactionCtx, w, tx, activationRequest.Token, username); err != nil {
 		return
 	}
 
@@ -175,13 +175,13 @@ func (handler *UserHandler) ResendToken(w http.ResponseWriter, r *http.Request) 
 	// Get username from path
 	username := chi.URLParam(r, "username")
 
-	email, userId, errorOccurred := retrieveUserIdAndEmail(w, tx, transactionCtx, username)
+	email, userId, errorOccurred := retrieveUserIdAndEmail(transactionCtx, w, tx, username)
 	if errorOccurred {
 		return
 	}
 
 	// Check if the user is activated
-	if err, _, activated := checkUserExistenceAndActivation(w, tx, transactionCtx, username); err != nil {
+	if _, activated, err := checkUserExistenceAndActivation(transactionCtx, w, tx, username); err != nil {
 		return
 	} else if activated {
 		utils.WriteAndLogError(w, schemas.UserAlreadyActivated, http.StatusAlreadyReported, errors.New("already activated"))
@@ -220,7 +220,7 @@ func (handler *UserHandler) LoginUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if user exists and if yes, if he is activated
-	err, exists, activated := checkUserExistenceAndActivation(w, tx, transactionCtx, loginRequest.Username)
+	exists, activated, err := checkUserExistenceAndActivation(transactionCtx, w, tx, loginRequest.Username)
 	if err != nil {
 		return
 	}
@@ -238,11 +238,11 @@ func (handler *UserHandler) LoginUser(w http.ResponseWriter, r *http.Request) {
 	// Check if password matches
 	queryString := "SELECT password FROM users WHERE username = $1"
 	rows, err := tx.Query(transactionCtx, queryString, loginRequest.Username)
-	defer rows.Close()
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
+	defer rows.Close()
 
 	var password string
 	rows.Next() // We already asserted existence earlier, so we can assume that the row exists
@@ -260,15 +260,15 @@ func (handler *UserHandler) LoginUser(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(200)
 }
 
-func retrieveUserIdAndEmail(w http.ResponseWriter, tx pgx.Tx, transactionCtx context.Context, username string) (string, uuid.UUID, bool) {
+func retrieveUserIdAndEmail(transactionCtx context.Context, w http.ResponseWriter, tx pgx.Tx, username string) (string, uuid.UUID, bool) {
 	// Get the user ID
 	queryString := "SELECT email, user_id FROM users WHERE username = $1"
 	rows, err := tx.Query(transactionCtx, queryString, username)
-	defer rows.Close()
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return "", uuid.UUID{}, true
 	}
+	defer rows.Close()
 
 	var email string
 	var userID uuid.UUID
@@ -285,7 +285,7 @@ func retrieveUserIdAndEmail(w http.ResponseWriter, tx pgx.Tx, transactionCtx con
 	return email, userID, false
 }
 
-func checkUsernameEmailTaken(w http.ResponseWriter, tx pgx.Tx, ctx context.Context, username, email string) error {
+func checkUsernameEmailTaken(ctx context.Context, w http.ResponseWriter, tx pgx.Tx, username, email string) error {
 	queryString := "SELECT username, email FROM users WHERE username = $1 OR email = $2"
 	rows, err := tx.Query(ctx, queryString, username, email)
 	if err != nil {
@@ -318,7 +318,7 @@ func checkUsernameEmailTaken(w http.ResponseWriter, tx pgx.Tx, ctx context.Conte
 	return nil
 }
 
-func checkTokenValidity(w http.ResponseWriter, tx pgx.Tx, ctx context.Context, token, username string) error {
+func checkTokenValidity(ctx context.Context, w http.ResponseWriter, tx pgx.Tx, token, username string) error {
 	queryString := "SELECT user_id FROM user_token WHERE token = $1 AND user_id = (SELECT user_id FROM users WHERE username = $2)"
 	rows, err := tx.Query(ctx, queryString, token, username)
 	if err != nil {
@@ -335,12 +335,12 @@ func checkTokenValidity(w http.ResponseWriter, tx pgx.Tx, ctx context.Context, t
 	return nil
 }
 
-func checkUserExistenceAndActivation(w http.ResponseWriter, tx pgx.Tx, ctx context.Context, username string) (error, bool, bool) {
+func checkUserExistenceAndActivation(ctx context.Context, w http.ResponseWriter, tx pgx.Tx, username string) (bool, bool, error) {
 	queryString := "SELECT activated_at FROM users WHERE username = $1"
 	rows, err := tx.Query(ctx, queryString, username)
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-		return err, false, false
+		return false, false, err
 	}
 	defer rows.Close()
 
@@ -348,13 +348,13 @@ func checkUserExistenceAndActivation(w http.ResponseWriter, tx pgx.Tx, ctx conte
 	if rows.Next() {
 		if err := rows.Scan(&activatedAt); err != nil {
 			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-			return err, false, false
+			return false, false, err
 		}
 	} else {
-		return nil, false, false
+		return false, false, nil
 	}
 
-	return nil, true, !activatedAt.Time.IsZero() && activatedAt.Valid
+	return true, !activatedAt.Time.IsZero() && activatedAt.Valid, nil
 }
 
 func generateAndSendToken(w http.ResponseWriter, handler *UserHandler, tx pgx.Tx, ctx context.Context, email, username, userId string) error {
