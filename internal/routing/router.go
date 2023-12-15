@@ -17,6 +17,7 @@ func InitRouter(pool *pgxpool.Pool) *chi.Mux {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(15 * time.Second))
+	r.Use(middleware.SetHeader("Content-Type", "application/json"))
 
 	// Initialize database manager
 	databaseMgr := managers.NewDatabaseManager(pool)
@@ -24,8 +25,14 @@ func InitRouter(pool *pgxpool.Pool) *chi.Mux {
 	// Initialize mail manager
 	mailMgr := managers.NewMailManager()
 
+	// Initialize JWT manager
+	jwtMgr, err := managers.NewJWTManager()
+	if err != nil {
+		panic(err)
+	}
+
 	// Initialize handlers
-	userHdl := handlers.NewUserHandler(&databaseMgr, &mailMgr)
+	userHdl := handlers.NewUserHandler(&databaseMgr, &jwtMgr, &mailMgr)
 
 	r.Route("/api/v1/users", func(r chi.Router) {
 		r.Post("/", userHdl.RegisterUser)

@@ -29,13 +29,15 @@ type UserHdl interface {
 
 type UserHandler struct {
 	DatabaseManager managers.DatabaseMgr
+	JWTManager      managers.JWTMgr
 	MailManager     managers.MailMgr
 	Validator       *utils.Validator
 }
 
-func NewUserHandler(databaseManager *managers.DatabaseMgr, mailManager *managers.MailMgr) UserHdl {
+func NewUserHandler(databaseManager *managers.DatabaseMgr, jwtManager *managers.JWTMgr, mailManager *managers.MailMgr) UserHdl {
 	return &UserHandler{
 		DatabaseManager: *databaseManager,
+		JWTManager:      *jwtManager,
 		MailManager:     *mailManager,
 		Validator:       utils.GetValidator(),
 	}
@@ -257,6 +259,18 @@ func (handler *UserHandler) LoginUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Generate a token for the user
+	claims := handler.JWTManager.GenerateClaims(loginRequest.Username)
+	token, err := handler.JWTManager.GenerateJWT(claims)
+
+	tokenDto := &schemas.TokenDTO{
+		Token: token,
+	}
+
+	if err := json.NewEncoder(w).Encode(tokenDto); err != nil {
+		utils.WriteAndLogError(w, schemas.InternalServerError, http.StatusInternalServerError, err)
+		return
+	}
 	w.WriteHeader(200)
 }
 

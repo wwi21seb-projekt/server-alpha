@@ -16,6 +16,12 @@ type UserDTO struct {
 	Email    string `json:"email"`
 }
 
+// TokenDTO is a struct that represents a token response
+// Token is the JWT token
+type TokenDTO struct {
+	Token string `json:"token"`
+}
+
 /** Request Objects **/
 
 // RegistrationRequest is a struct that represents a registration request
