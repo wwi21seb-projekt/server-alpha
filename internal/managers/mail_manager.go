@@ -27,11 +27,7 @@ func (mm *MailManager) SendActivationMail(email, username, token, serviceName st
 			Name: username,
 			Intros: []string{
 				fmt.Sprintf("Welcome to %s! We're very excited to have you on board.", serviceName),
-				"Please note that the registration is completed by Server Alpha.",
-				"If you have any questions, feel free to reach out to us at any time via team@mail.server-alpha.tech.",
-			},
-			Dictionary: []hermes.Entry{
-				{Key: "Activation Code:", Value: token},
+				"Please note that the registration is completed by Server Alpha. If you have any questions, feel free to reach out to us at any time via team@mail.server-alpha.tech.",
 			},
 			Outros: []string{
 				fmt.Sprintf("We thank you again for choosing %s in combination with Server Alpha!", serviceName),
@@ -53,7 +49,8 @@ func (mm *MailManager) SendActivationMail(email, username, token, serviceName st
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(2*time.Second))
 	defer cancel()
 
-	message := mm.Mailgun.NewMessage(from, "Activate your account", emailBody, email)
+	message := mm.Mailgun.NewMessage(from, "Activate your account", "", email)
+	message.SetHtml(emailBody)
 	_, _, err = mm.Mailgun.Send(ctx, message)
 	if err != nil {
 		return err

@@ -11,7 +11,6 @@ import (
 type Validator struct {
 	Validate    *validator.Validate
 	VerifyEmail func(email string) bool
-	once        sync.Once
 }
 
 var instance *Validator

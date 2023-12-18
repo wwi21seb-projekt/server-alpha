@@ -16,6 +16,12 @@ type UserDTO struct {
 	Email    string `json:"email"`
 }
 
+// TokenDTO is a struct that represents a token response
+// Token is the JWT token
+type TokenDTO struct {
+	Token string `json:"token"`
+}
+
 /** Request Objects **/
 
 // RegistrationRequest is a struct that represents a registration request
@@ -33,7 +39,7 @@ type RegistrationRequest struct {
 // ActivationRequest is a struct that represents an activation request
 // Token is required and must be a 6-digit number
 type ActivationRequest struct {
-	Token string `json:"token" validate:"required,numeric,eq=6"`
+	Token string `json:"token" validate:"required,numeric,len=6"`
 }
 
 // LoginRequest is a struct that represents a login request
