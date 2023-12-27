@@ -20,6 +20,6 @@
 
 # Go workspace file
 go.work
-/configs/alpha-keys-pem
+/configs/alpha-keys.pem
 .env
 server

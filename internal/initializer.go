@@ -9,10 +9,8 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/go-co-op/gocron/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
-	"server-alpha/internal/managers"
 	"server-alpha/internal/routing"
 )
 
@@ -28,19 +26,6 @@ func Init() {
 		log.Fatal("Error loading .env file: ", err)
 	}
 	log.Println("Loaded environment variables")
-
-	// Initialize JWT manager
-	jwtMgr, err := managers.NewJWTManager()
-	if err != nil {
-		log.Fatal("Error initializing JWT manager: ", err)
-	}
-
-	// Initialize cron job
-	scheduler, err := initCronJob(jwtMgr)
-	if err != nil {
-		log.Fatal("Error initializing cron job: ", err)
-	}
-	defer shutdownCronJob(*scheduler)
 
 	// Connect to database
 	pool, err := initializeDatabase()
@@ -69,31 +54,6 @@ func Init() {
 	err = http.ListenAndServe(port, r)
 	if err != nil {
 		log.Fatal("Error starting server: ", err)
-	}
-}
-
-func initCronJob(jwtMgr managers.JWTMgr) (*gocron.Scheduler, error) {
-	scheduler, err := gocron.NewScheduler()
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = scheduler.NewJob(
-		gocron.DurationJob(3*time.Hour),
-		gocron.NewTask(jwtMgr.RotateKeys),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	scheduler.Start()
-	return &scheduler, nil
-}
-
-func shutdownCronJob(scheduler gocron.Scheduler) {
-	err := scheduler.Shutdown()
-	if err != nil {
-		log.Fatal("Error shutting down cron job: ", err)
 	}
 }
 
