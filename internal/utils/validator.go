@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"sync"
 	"unicode"
+	"unicode/utf8"
 )
 
 type Validator struct {
@@ -41,15 +42,9 @@ func validateEmail(email string) bool {
 }
 
 func registerCustomValidators(v *validator.Validate) {
-	err := v.RegisterValidation("username_validation", usernameValidation)
-	if err != nil {
-		return
-	}
-
-	err = v.RegisterValidation("password_validation", passwordValidation)
-	if err != nil {
-		return
-	}
+	_ = v.RegisterValidation("username_validation", usernameValidation)
+	_ = v.RegisterValidation("password_validation", passwordValidation)
+	_ = v.RegisterValidation("post_validation", postValidation)
 }
 
 func usernameValidation(fl validator.FieldLevel) bool {
@@ -87,4 +82,9 @@ func passwordValidation(fl validator.FieldLevel) bool {
 	}
 
 	return upperLetter && lowerLetter && number && specialChar
+}
+
+func postValidation(fl validator.FieldLevel) bool {
+	value := fl.Field().String()
+	return utf8.ValidString(value)
 }

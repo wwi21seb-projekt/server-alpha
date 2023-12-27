@@ -61,4 +61,8 @@ var (
 		Message: "The user is already activated. Please login to your account.",
 		Code:    "ERR-013",
 	}
+	Unauthorized = &CustomError{
+		Message: "The request is unauthorized. Please login to your account.",
+		Code:    "ERR-014",
+	}
 )

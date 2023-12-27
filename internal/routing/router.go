@@ -33,12 +33,20 @@ func InitRouter(pool *pgxpool.Pool) *chi.Mux {
 
 	// Initialize handlers
 	userHdl := handlers.NewUserHandler(&databaseMgr, &jwtMgr, &mailMgr)
+	postHdl := handlers.NewPostHandler(&databaseMgr)
 
+	// Initialize user routes
 	r.Route("/api/v1/users", func(r chi.Router) {
 		r.Post("/", userHdl.RegisterUser)
 		r.Post("/login", userHdl.LoginUser)
 		r.Post("/{username}/activate", userHdl.ActivateUser)
 		r.Delete("/{username}/activate", userHdl.ResendToken)
+	})
+
+	// Initialize post routes
+	r.Route("/api/v1/posts", func(r chi.Router) {
+		r.Use(jwtMgr.JWTMiddleware)
+		r.Post("/", postHdl.CreatePost)
 	})
 
 	return r

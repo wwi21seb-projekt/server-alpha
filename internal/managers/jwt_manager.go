@@ -1,18 +1,23 @@
 package managers
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"fmt"
 	"github.com/golang-jwt/jwt/v5"
+	"net/http"
 	"os"
+	"server-alpha/internal/schemas"
+	"server-alpha/internal/utils"
 	"time"
 )
 
 type JWTMgr interface {
 	GenerateJWT(claims jwt.Claims) (string, error)
 	ValidateJWT(tokenString string) (jwt.Claims, error)
-	GenerateClaims(userId string) jwt.Claims
+	JWTMiddleware(next http.Handler) http.Handler
+	GenerateClaims(userId, username string) jwt.Claims
 }
 
 // JWTManager handles JWT generation, signing, and validation.
@@ -50,12 +55,13 @@ func NewJWTManager() (JWTMgr, error) {
 }
 
 // GenerateClaims generates the standard JWT claims.
-func (jm *JWTManager) GenerateClaims(userId string) jwt.Claims {
+func (jm *JWTManager) GenerateClaims(userId, username string) jwt.Claims {
 	return jwt.MapClaims{
-		"iss": "server-alpha.tech",
-		"iat": time.Now().Unix(),
-		"exp": time.Now().Add(time.Hour * 24).Unix(),
-		"sub": userId,
+		"iss":      "server-alpha.tech",
+		"iat":      time.Now().Unix(),
+		"exp":      time.Now().Add(time.Hour * 24).Unix(),
+		"sub":      userId,
+		"username": username,
 	}
 }
 
@@ -85,6 +91,30 @@ func (jm *JWTManager) ValidateJWT(tokenString string) (jwt.Claims, error) {
 	}
 
 	return token.Claims, nil
+}
+
+func (jm *JWTManager) JWTMiddleware(next http.Handler) http.Handler {
+	fn := func(w http.ResponseWriter, r *http.Request) {
+		// Extract the JWT token from the request header
+		header := r.Header.Get("Authorization")
+		token := header[len("Bearer "):]
+
+		// Validate the JWT token
+		claims, err := jm.ValidateJWT(token)
+		if err != nil {
+			utils.WriteAndLogError(w, schemas.Unauthorized, http.StatusUnauthorized, err)
+			return
+		}
+
+		// Add the claims to the request context
+		ctx := r.Context()
+		ctx = context.WithValue(ctx, "claims", claims)
+		r = r.WithContext(ctx)
+
+		next.ServeHTTP(w, r)
+	}
+
+	return http.HandlerFunc(fn)
 }
 
 // generateKeyPair generates a new key pair and saves it to a file.
