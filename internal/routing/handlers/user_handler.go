@@ -136,8 +136,17 @@ func (handler *UserHandler) ActivateUser(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Get the user ID
 	_, userID, errorOccurred := retrieveUserIdAndEmail(transactionCtx, w, tx, username)
 	if errorOccurred {
+		return
+	}
+
+	// Check if the user is activated
+	if _, activated, err := checkUserExistenceAndActivation(transactionCtx, w, tx, username); err != nil {
+
+	} else if activated {
+		utils.WriteAndLogError(w, schemas.UserAlreadyActivated, http.StatusAlreadyReported, errors.New("already activated"))
 		return
 	}
 
@@ -333,7 +342,7 @@ func checkUsernameEmailTaken(ctx context.Context, w http.ResponseWriter, tx pgx.
 }
 
 func checkTokenValidity(ctx context.Context, w http.ResponseWriter, tx pgx.Tx, token, username string) error {
-	queryString := "SELECT user_id FROM user_token WHERE token = $1 AND user_id = (SELECT user_id FROM users WHERE username = $2)"
+	queryString := "SELECT expires_at FROM user_token WHERE token = $1 AND user_id = (SELECT user_id FROM users WHERE username = $2)"
 	rows, err := tx.Query(ctx, queryString, token, username)
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
@@ -344,6 +353,17 @@ func checkTokenValidity(ctx context.Context, w http.ResponseWriter, tx pgx.Tx, t
 	if !rows.Next() {
 		utils.WriteAndLogError(w, schemas.InvalidToken, http.StatusUnauthorized, errors.New("invalid token"))
 		return errors.New("invalid token")
+	}
+
+	var expiresAt pgtype.Timestamptz
+	if err := rows.Scan(&expiresAt); err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return err
+	}
+
+	if time.Now().After(expiresAt.Time) {
+		utils.WriteAndLogError(w, schemas.ActivationTokenExpired, http.StatusUnauthorized, errors.New("token expired"))
+		return errors.New("token expired")
 	}
 
 	return nil

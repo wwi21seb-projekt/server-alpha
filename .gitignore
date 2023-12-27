@@ -8,9 +8,6 @@
 *.so
 *.dylib
 *.idea
-.env
-configs/alpha-keys.pem
-server
 
 # Test binary, built with `go test -c`
 *.test
@@ -23,3 +20,6 @@ server
 
 # Go workspace file
 go.work
+/configs/alpha-keys-pem
+.env
+server
