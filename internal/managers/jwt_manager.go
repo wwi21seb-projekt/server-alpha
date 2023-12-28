@@ -3,7 +3,8 @@ package managers
 import (
 	"context"
 	"crypto/ed25519"
-	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"github.com/golang-jwt/jwt/v5"
 	"net/http"
@@ -22,36 +23,68 @@ type JWTMgr interface {
 
 // JWTManager handles JWT generation, signing, and validation.
 type JWTManager struct {
-	privateKey  ed25519.PrivateKey
-	publicKey   ed25519.PublicKey
-	keyPairPath string
+	privateKey ed25519.PrivateKey
+	publicKey  ed25519.PublicKey
 }
 
 // NewJWTManager creates a new JWTManager with the initial key pair.
 func NewJWTManager() (JWTMgr, error) {
-	path := os.Getenv("KEY_PAIR_PATH")
-
-	// Load key pair from given path
-	var privateKey ed25519.PrivateKey
-	var publicKey ed25519.PublicKey
-
-	privateKey, publicKey, err := loadKeyPair(path)
+	privateKey, err := parsePrivateKey(os.Getenv("JWT_PRIVATE_KEY"))
 	if err != nil {
-		// No key yet for initial setup, generate a new key pair
-		privKey, pubKey, err := generateKeyPair(path)
-		if err != nil {
-			return nil, err
-		}
+		return nil, err
+	}
+	publicKey, err := parsePublicKey(os.Getenv("JWT_PUBLIC_KEY"))
+	if err != nil {
+		return nil, err
+	}
+	return &JWTManager{
+		privateKey: privateKey,
+		publicKey:  publicKey,
+	}, nil
+}
 
-		privateKey = privKey
-		publicKey = pubKey
+// parsePrivateKey parses a PEM formatted private key.
+func parsePrivateKey(privKeyB64Str string) (ed25519.PrivateKey, error) {
+	privKeyPemStr := fmt.Sprintf("-----BEGIN PRIVATE KEY-----\n%s\n-----END PRIVATE KEY-----", privKeyB64Str)
+
+	block, _ := pem.Decode([]byte(privKeyPemStr))
+	if block == nil {
+		return nil, fmt.Errorf("failed to parse PEM block containing the private key")
 	}
 
-	return &JWTManager{
-		privateKey:  privateKey,
-		publicKey:   publicKey,
-		keyPairPath: path,
-	}, nil
+	priv, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse private key: %w", err)
+	}
+
+	ed25519Priv, ok := priv.(ed25519.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("invalid private key type, expected ed25519.PrivateKey")
+	}
+
+	return ed25519Priv, nil
+}
+
+// parsePublicKey parses a PEM formatted public key.
+func parsePublicKey(pubKeyB64Str string) (ed25519.PublicKey, error) {
+	pubKeyPemStr := fmt.Sprintf("-----BEGIN PUBLIC KEY-----\n%s\n-----END PUBLIC KEY-----", pubKeyB64Str)
+
+	block, _ := pem.Decode([]byte(pubKeyPemStr))
+	if block == nil {
+		return nil, fmt.Errorf("failed to parse PEM block containing the public key")
+	}
+
+	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse public key: %w", err)
+	}
+
+	ed25519Pub, ok := pub.(ed25519.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("invalid public key type, expected ed25519.PublicKey")
+	}
+
+	return ed25519Pub, nil
 }
 
 // GenerateClaims generates the standard JWT claims.
@@ -115,47 +148,4 @@ func (jm *JWTManager) JWTMiddleware(next http.Handler) http.Handler {
 	}
 
 	return http.HandlerFunc(fn)
-}
-
-// generateKeyPair generates a new key pair and saves it to a file.
-func generateKeyPair(path string) (ed25519.PrivateKey, ed25519.PublicKey, error) {
-	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Save the new key pair to a file for persistence
-	err = saveKeyPair(privateKey, publicKey, path)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return privateKey, publicKey, nil
-}
-
-// saveKeyPair saves the key pair to the specified file.
-func saveKeyPair(privateKey ed25519.PrivateKey, publicKey ed25519.PublicKey, path string) error {
-	keyPairBytes := append(privateKey, publicKey...)
-	return os.WriteFile(path, keyPairBytes, 0644)
-}
-
-// loadKeyPair loads the key pair from the specified file.
-func loadKeyPair(path string) (ed25519.PrivateKey, ed25519.PublicKey, error) {
-	keyPairBytes, err := os.ReadFile(path)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	var privateKey ed25519.PrivateKey
-	var publicKey ed25519.PublicKey
-
-	// The key pair is the concatenation of private and public keys
-	if len(keyPairBytes) == ed25519.PrivateKeySize+ed25519.PublicKeySize {
-		privateKey = keyPairBytes[:ed25519.PrivateKeySize]
-		publicKey = keyPairBytes[ed25519.PrivateKeySize:]
-	} else {
-		return nil, nil, fmt.Errorf("invalid key pair format")
-	}
-
-	return privateKey, publicKey, nil
 }
