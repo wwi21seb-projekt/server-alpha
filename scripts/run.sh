@@ -19,6 +19,12 @@ print_message() {
   echo -e "\033[${COLOR}m${TEXT}\033[0m"
 }
 
+# Check if .env file exists
+if [[ ! -e .env ]]; then
+  print_message "31" "No .env file found. Running setup_env.sh..."
+  ./scripts/setup_env.sh
+fi
+
 case $COMMAND in
 up)
     case $SERVICE in
