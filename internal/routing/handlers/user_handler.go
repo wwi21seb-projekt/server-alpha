@@ -275,6 +275,11 @@ func (handler *UserHandler) LoginUser(w http.ResponseWriter, r *http.Request) {
 	claims := handler.JWTManager.GenerateClaims(userId.String(), loginRequest.Username)
 	token, err := handler.JWTManager.GenerateJWT(claims)
 
+	if err != nil {
+		utils.WriteAndLogError(w, schemas.InternalServerError, http.StatusInternalServerError, err)
+		return
+	}
+
 	tokenDto := &schemas.TokenDTO{
 		Token: token,
 	}

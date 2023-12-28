@@ -127,6 +127,8 @@ func (jm *JWTManager) ValidateJWT(tokenString string) (jwt.Claims, error) {
 }
 
 func (jm *JWTManager) JWTMiddleware(next http.Handler) http.Handler {
+	type claimsKey string
+
 	fn := func(w http.ResponseWriter, r *http.Request) {
 		// Extract the JWT token from the request header
 		header := r.Header.Get("Authorization")
@@ -141,7 +143,7 @@ func (jm *JWTManager) JWTMiddleware(next http.Handler) http.Handler {
 
 		// Add the claims to the request context
 		ctx := r.Context()
-		ctx = context.WithValue(ctx, "claims", claims)
+		ctx = context.WithValue(ctx, claimsKey("claims"), claims)
 		r = r.WithContext(ctx)
 
 		next.ServeHTTP(w, r)
