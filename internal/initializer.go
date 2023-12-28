@@ -60,11 +60,11 @@ func Init() {
 
 func initializeDatabase() (*pgxpool.Pool, error) {
 	var (
-		dbHost     = os.Getenv("LOCAL_DB_HOST")
-		dbPort     = os.Getenv("LOCAL_DB_PORT")
-		dbUser     = os.Getenv("LOCAL_DB_USER")
-		dbPassword = os.Getenv("LOCAL_DB_PASSWORD")
-		dbName     = os.Getenv("LOCAL_DB_NAME")
+		dbHost     = os.Getenv("DB_HOST")
+		dbPort     = os.Getenv("DB_PORT")
+		dbUser     = os.Getenv("DB_USER")
+		dbPassword = os.Getenv("DB_PASS")
+		dbName     = os.Getenv("DB_NAME")
 	)
 
 	if dbHost == "" || dbPort == "" || dbUser == "" || dbPassword == "" || dbName == "" {

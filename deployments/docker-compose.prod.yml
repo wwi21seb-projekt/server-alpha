@@ -4,7 +4,7 @@ services:
   db:
     image: postgres:latest
     env_file:
-      - prod.env
+      - ../prod.env
     environment:
       - POSTGRES_DB=${DB_NAME}
       - POSTGRES_USER=${DB_USER}
@@ -26,13 +26,13 @@ services:
     depends_on:
       - db
     env_file:
-      - prod.env
+      - ../prod.env
     environment:
-      - LOCAL_DB_HOST=db
-      - LOCAL_DB_PORT=${DB_PORT}
-      - LOCAL_DB_NAME=${DB_NAME}
-      - LOCAL_DB_USER=${DB_USER}
-      - LOCAL_DB_PASSWORD=${DB_PASS}
+      - DB_HOST=db
+      - DB_PORT=${DB_PORT}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
       - JWT_PRIVATE_KEY=${JWT_PRIVATE_KEY}
       - JWT_PUBLIC_KEY=${JWT_PUBLIC_KEY}
 
