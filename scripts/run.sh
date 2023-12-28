@@ -25,6 +25,10 @@ if [[ ! -e .env ]]; then
   ./scripts/setup_env.sh
 fi
 
+# Go to the base directory
+BASE_DIR=$(dirname "$0")/..
+cd "$BASE_DIR" || exit
+
 case $COMMAND in
 up)
     case $SERVICE in
@@ -43,17 +47,17 @@ up)
         ;;
     esac
     print_message "33" "Starting the services: $SERVICE_LIST..."
-    docker-compose -f deployments/docker-compose.yml -p server_alpha up -d $SERVICE_LIST
+    docker-compose --env-file .env -f deployments/docker-compose.yml -p server_alpha up -d $SERVICE_LIST
     ;;
 down)
     case $SERVICE in
     app|db)
         print_message "33" "Stopping the service: $SERVICE..."
-        docker-compose -f deployments/docker-compose.yml -p server_alpha stop $SERVICE
+        docker-compose --env-file .env -f deployments/docker-compose.yml -p server_alpha stop $SERVICE
         ;;
     all | "")
         print_message "33" "Stopping all the services..."
-        docker-compose -f deployments/docker-compose.yml -p server_alpha down
+        docker-compose --env-file .env -f deployments/docker-compose.yml -p server_alpha down
         ;;
     *)
         print_message "31" "Invalid service. Services are app, db or all"
@@ -63,7 +67,7 @@ down)
     ;;
 status)
     print_message "33" "Getting the status of the services..."
-    docker-compose -f deployments/docker-compose.yml -p server_alpha ps
+    docker-compose --env-file .env -f deployments/docker-compose.yml -p server_alpha ps
     ;;
 build)
     print_message "33" "Building the Docker image..."
