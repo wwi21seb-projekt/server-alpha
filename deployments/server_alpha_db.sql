@@ -40,9 +40,9 @@ CREATE TABLE alpha_schema.users (
 	nickname varchar(20) NOT NULL,
 	email varchar(128) NOT NULL,
 	password varchar(32) NOT NULL,
-	created_at date NOT NULL,
-	activated_at date,
-	expires_at date,
+	created_at timestamptz NOT NULL,
+	activated_at timestamptz,
+	expires_at timestamptz,
 	CONSTRAINT user_id_pk PRIMARY KEY (user_id)
 );
 -- ddl-end --
@@ -52,7 +52,7 @@ CREATE TABLE alpha_schema.users (
 CREATE TABLE alpha_schema.user_token (
 	token_id uuid NOT NULL,
 	token varchar(6) NOT NULL,
-	expires_at date,
+	expires_at timestamptz,
 	user_id uuid NOT NULL,
 	CONSTRAINT tokens_pk PRIMARY KEY (token_id)
 );
@@ -70,7 +70,7 @@ ON DELETE CASCADE ON UPDATE CASCADE;
 CREATE TABLE alpha_schema.posts (
 	post_id uuid NOT NULL,
 	content varchar(256),
-	created_at date NOT NULL,
+	created_at timestamptz NOT NULL,
 	author_id uuid NOT NULL,
 	CONSTRAINT posts_pk PRIMARY KEY (post_id)
 );
@@ -81,7 +81,7 @@ CREATE TABLE alpha_schema.posts (
 CREATE TABLE alpha_schema.subscriptions (
 	subscribee_id uuid NOT NULL,
 	subscriber_id uuid NOT NULL,
-	created_at date NOT NULL,
+	created_at timestamptz NOT NULL,
 	CONSTRAINT subscriptions_pk PRIMARY KEY (subscribee_id,subscriber_id)
 );
 -- ddl-end --
@@ -163,9 +163,9 @@ ON DELETE CASCADE ON UPDATE CASCADE;
 -- object: alpha_schema.likes | type: TABLE --
 -- DROP TABLE IF EXISTS alpha_schema.likes CASCADE;
 CREATE TABLE alpha_schema.likes (
-	liked_at date NOT NULL,
 	user_id uuid NOT NULL,
 	post_id uuid NOT NULL,
+	liked_at timestamptz NOT NULL,
 	CONSTRAINT likes_pk PRIMARY KEY (user_id,post_id)
 );
 -- ddl-end --
