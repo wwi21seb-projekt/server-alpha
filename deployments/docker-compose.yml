@@ -1,1 +1,30 @@
-# Will follow
+version: '3.8'
+
+services:
+  db:
+    image: postgres:latest
+    environment:
+      - POSTGRES_DB=server_alpha_db
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASS}
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./server_alpha_db.sql:/docker-entrypoint-initdb.d/initdb.sql
+
+  app:
+    image: "server-alpha:latest"
+    depends_on:
+      - db
+    environment:
+      - LOCAL_DB_HOST=db
+      - LOCAL_DB_PORT=${DB_PORT}
+      - LOCAL_DB_NAME=server_alpha_db
+      - LOCAL_DB_USER=${DB_USER}
+      - LOCAL_DB_PASSWORD=${DB_PASS}
+      - JWT_PRIVATE_KEY=${JWT_PRIVATE_KEY}
+      - JWT_PUBLIC_KEY=${JWT_PUBLIC_KEY}
+
+volumes:
+  db_data:
