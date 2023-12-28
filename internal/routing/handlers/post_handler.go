@@ -53,7 +53,7 @@ func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 	postId := uuid.New()
 	createdAt := time.Now()
 
-	queryString := "INSERT INTO v1.posts (post_id, author_id, content, created_at) VALUES($1, $2, $3, $4)"
+	queryString := "INSERT INTO alpha_schema.posts (post_id, author_id, content, created_at) VALUES($1, $2, $3, $4)"
 	_, err := tx.Exec(transactionCtx, queryString, postId, userId, createPostRequest.Content, createdAt)
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
@@ -61,7 +61,7 @@ func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get the author
-	queryString = "SELECT username, nickname FROM v1.users WHERE user_id = $1"
+	queryString = "SELECT username, nickname FROM alpha_schema.users WHERE user_id = $1"
 	row := tx.QueryRow(transactionCtx, queryString, userId)
 
 	author := &schemas.AuthorDTO{}

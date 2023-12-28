@@ -86,7 +86,7 @@ func (handler *UserHandler) RegisterUser(w http.ResponseWriter, r *http.Request)
 	createdAt := time.Now()
 	expiresAt := createdAt.Add(168 * time.Hour)
 
-	queryString := "INSERT INTO v1.users (user_id, username, nickname, email, password, created_at, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7)"
+	queryString := "INSERT INTO alpha_schema.users (user_id, username, nickname, email, password, created_at, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7)"
 	if _, err := tx.Exec(transactionCtx, queryString, userId, registrationRequest.Username, registrationRequest.Nickname, registrationRequest.Email, hashedPassword, createdAt, expiresAt); err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
@@ -158,14 +158,14 @@ func (handler *UserHandler) ActivateUser(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Activate the user
-	queryString := "UPDATE v1.users SET activated_at = $1 WHERE user_id = $2"
+	queryString := "UPDATE alpha_schema.users SET activated_at = $1 WHERE user_id = $2"
 	if _, err := tx.Exec(transactionCtx, queryString, time.Now(), userID); err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
 	// Delete the token
-	queryString = "DELETE FROM v1.user_token WHERE token = $1"
+	queryString = "DELETE FROM alpha_schema.user_token WHERE token = $1"
 	if _, err := tx.Exec(transactionCtx, queryString, activationRequest.Token); err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
@@ -249,7 +249,7 @@ func (handler *UserHandler) LoginUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if password matches
-	queryString := "SELECT password, user_id FROM v1.users WHERE username = $1"
+	queryString := "SELECT password, user_id FROM alpha_schema.users WHERE username = $1"
 	rows, err := tx.Query(transactionCtx, queryString, loginRequest.Username)
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
@@ -293,7 +293,7 @@ func (handler *UserHandler) LoginUser(w http.ResponseWriter, r *http.Request) {
 
 func retrieveUserIdAndEmail(transactionCtx context.Context, w http.ResponseWriter, tx pgx.Tx, username string) (string, uuid.UUID, bool) {
 	// Get the user ID
-	queryString := "SELECT email, user_id FROM v1.users WHERE username = $1"
+	queryString := "SELECT email, user_id FROM alpha_schema.users WHERE username = $1"
 	rows, err := tx.Query(transactionCtx, queryString, username)
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
@@ -317,7 +317,7 @@ func retrieveUserIdAndEmail(transactionCtx context.Context, w http.ResponseWrite
 }
 
 func checkUsernameEmailTaken(ctx context.Context, w http.ResponseWriter, tx pgx.Tx, username, email string) error {
-	queryString := "SELECT username, email FROM v1.users WHERE username = $1 OR email = $2"
+	queryString := "SELECT username, email FROM alpha_schema.users WHERE username = $1 OR email = $2"
 	rows, err := tx.Query(ctx, queryString, username, email)
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
@@ -350,7 +350,7 @@ func checkUsernameEmailTaken(ctx context.Context, w http.ResponseWriter, tx pgx.
 }
 
 func checkTokenValidity(ctx context.Context, w http.ResponseWriter, tx pgx.Tx, token, username string) error {
-	queryString := "SELECT expires_at FROM v1.user_token WHERE token = $1 AND user_id = (SELECT user_id FROM v1.users WHERE username = $2)"
+	queryString := "SELECT expires_at FROM alpha_schema.user_token WHERE token = $1 AND user_id = (SELECT user_id FROM alpha_schema.users WHERE username = $2)"
 	rows, err := tx.Query(ctx, queryString, token, username)
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
@@ -378,7 +378,7 @@ func checkTokenValidity(ctx context.Context, w http.ResponseWriter, tx pgx.Tx, t
 }
 
 func checkUserExistenceAndActivation(ctx context.Context, w http.ResponseWriter, tx pgx.Tx, username string) (bool, bool, error) {
-	queryString := "SELECT activated_at FROM v1.users WHERE username = $1"
+	queryString := "SELECT activated_at FROM alpha_schema.users WHERE username = $1"
 	rows, err := tx.Query(ctx, queryString, username)
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
@@ -406,13 +406,13 @@ func generateAndSendToken(w http.ResponseWriter, handler *UserHandler, tx pgx.Tx
 	tokenExpiresAt := time.Now().Add(2 * time.Hour)
 
 	// Delete the old token if it exists
-	queryString := "DELETE FROM v1.user_token WHERE user_id = $1"
+	queryString := "DELETE FROM alpha_schema.user_token WHERE user_id = $1"
 	if _, err := tx.Exec(ctx, queryString, userId); err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return err
 	}
 
-	queryString = "INSERT INTO v1.user_token (token_id, user_id, token, expires_at) VALUES ($1, $2, $3, $4)"
+	queryString = "INSERT INTO alpha_schema.user_token (token_id, user_id, token, expires_at) VALUES ($1, $2, $3, $4)"
 	if _, err := tx.Exec(ctx, queryString, tokenID, userId, token, tokenExpiresAt); err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return err
