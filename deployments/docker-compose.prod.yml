@@ -3,6 +3,8 @@ version: '3.8'
 services:
   db:
     image: postgres:latest
+    env_file:
+      - prod.env
     environment:
       - POSTGRES_DB=${DB_NAME}
       - POSTGRES_USER=${DB_USER}
@@ -19,9 +21,12 @@ services:
       retries: 5
 
   app:
-    image: "server-alpha:latest"
+    # It's possible to specify the image to use in the environment, default is the latest image from the github container registry
+    image: "${SERVER_IMAGE:-ghcr.io/wwi21seb-projekt/server-alpha:main}"
     depends_on:
       - db
+    env_file:
+      - prod.env
     environment:
       - LOCAL_DB_HOST=db
       - LOCAL_DB_PORT=${DB_PORT}
