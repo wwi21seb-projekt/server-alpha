@@ -4,6 +4,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"net/http"
 	"server-alpha/internal/managers"
 	"server-alpha/internal/routing/handlers"
 	"time"
@@ -34,6 +35,21 @@ func InitRouter(pool *pgxpool.Pool) *chi.Mux {
 	// Initialize handlers
 	userHdl := handlers.NewUserHandler(&databaseMgr, &jwtMgr, &mailMgr)
 	postHdl := handlers.NewPostHandler(&databaseMgr)
+
+	// Initialize health check route
+	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		// Ping the database
+		conn, err := pool.Acquire(r.Context())
+		if err != nil {
+			http.Error(w, "Database not responding", http.StatusInternalServerError)
+			return
+		}
+
+		defer conn.Release()
+
+		// If this point is reached, database is functioning
+		w.WriteHeader(http.StatusOK)
+	})
 
 	// Initialize user routes
 	r.Route("/api/v1/users", func(r chi.Router) {
