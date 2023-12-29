@@ -4,11 +4,12 @@
 # Enable BuildKit
 export DOCKER_BUILDKIT=1
 
-# Get the current directory of the script
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+#
+BASE_DIR=$(dirname "$0")/..
+cd "$BASE_DIR" || exit
 
-# Navigate to the root directory
-cd "${SCRIPT_DIR}/.." || exit
+# Run the tests
+go test ./... || exit
 
 # Build the Docker image
 docker build -t server-alpha -f build/package/Dockerfile .

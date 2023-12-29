@@ -16,6 +16,15 @@ func DecodeRequestBody(w http.ResponseWriter, r *http.Request, target interface{
 	return nil
 }
 
+func WriteAndLogResponse(w http.ResponseWriter, response interface{}, statusCode int) {
+	w.WriteHeader(statusCode)
+
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+}
+
 func WriteAndLogError(w http.ResponseWriter, error *schemas.CustomError, statusCode int, err error) {
 	w.WriteHeader(statusCode)
 	log.Println("Error occurred: " + err.Error())

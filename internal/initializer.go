@@ -23,9 +23,10 @@ func Init() {
 	// Load environment variables
 	err := godotenv.Load(envFile)
 	if err != nil {
-		log.Fatal("Error loading .env file: ", err)
+		log.Println("Error loading environment variables from .env file: ", err)
+	} else {
+		log.Println("Loaded environment variables from .env file")
 	}
-	log.Println("Loaded environment variables")
 
 	// Connect to database
 	pool, err := initializeDatabase()
@@ -59,12 +60,16 @@ func Init() {
 
 func initializeDatabase() (*pgxpool.Pool, error) {
 	var (
-		dbHost     = os.Getenv("LOCAL_DB_HOST")
-		dbPort     = os.Getenv("LOCAL_DB_PORT")
-		dbUser     = os.Getenv("LOCAL_DB_USER")
-		dbPassword = os.Getenv("LOCAL_DB_PASSWORD")
-		dbName     = os.Getenv("LOCAL_DB_NAME")
+		dbHost     = os.Getenv("DB_HOST")
+		dbPort     = os.Getenv("DB_PORT")
+		dbUser     = os.Getenv("DB_USER")
+		dbPassword = os.Getenv("DB_PASS")
+		dbName     = os.Getenv("DB_NAME")
 	)
+
+	if dbHost == "" || dbPort == "" || dbUser == "" || dbPassword == "" || dbName == "" {
+		return nil, fmt.Errorf("database environment variables not set")
+	}
 
 	url := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable", dbHost, dbPort, dbUser, dbPassword, dbName)
 	config, err := pgxpool.ParseConfig(url)
