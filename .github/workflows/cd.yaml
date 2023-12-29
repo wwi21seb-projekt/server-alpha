@@ -50,7 +50,7 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT }}
-          source: "deployments/docker-compose.prod.yml"
+          source: "deployments/docker-compose.prod.yml,deployments/server_alpha_db.sql"
           target: "/home/serveralpha"
 
       - name: Setup SSH
@@ -62,4 +62,5 @@ jobs:
           port: ${{ secrets.DEPLOY_PORT }}
           script: |
             docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tags }}
-            docker-compose -f /home/serveralpha/deployments/docker-compose.prod.yml -p server_alpha up -d
+            docker-compose -f deployments/docker-compose.prod.yml -p server_alpha down
+            docker-compose -f deployments/docker-compose.prod.yml -p server_alpha up -d

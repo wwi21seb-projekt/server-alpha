@@ -3,10 +3,11 @@ package internal
 import (
 	"context"
 	"fmt"
-	"log"
+	log "github.com/sirupsen/logrus"
 	"net/http"
 	"os"
 	"os/signal"
+	"server-alpha/internal/managers"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -20,24 +21,36 @@ const (
 )
 
 func Init() {
-	// Load environment variables
 	err := godotenv.Load(envFile)
 	if err != nil {
-		log.Println("Error loading environment variables from .env file: ", err)
+		log.Info("No .env file found, using environment variables from system")
 	} else {
-		log.Println("Loaded environment variables from .env file")
+		log.Info("Loaded environment variables from .env file")
 	}
+
+	logLevel := os.Getenv("LOG_LEVEL")
+	setLogLevel(logLevel)
+	log.Debugf("Environment variables: %v", os.Environ())
 
 	// Connect to database
-	pool, err := initializeDatabase()
-	if err != nil {
-		log.Fatal("Error connecting to database: ", err)
-	}
-	log.Println("Connected to database")
+	pool := initializeDatabase()
+
 	defer pool.Close()
 
+	// Initialize database manager
+	databaseMgr := managers.NewDatabaseManager(pool)
+
+	// Initialize mail manager
+	mailMgr := managers.NewMailManager()
+
+	// Initialize JWT manager
+	jwtMgr, err := managers.NewJWTManager()
+	if err != nil {
+		panic(err)
+	}
+
 	// Initialize router
-	r := routing.InitRouter(pool)
+	r := routing.InitRouter(databaseMgr, mailMgr, jwtMgr)
 	log.Println("Initialized router")
 
 	// Handle interrupt signal gracefully
@@ -58,7 +71,9 @@ func Init() {
 	}
 }
 
-func initializeDatabase() (*pgxpool.Pool, error) {
+func initializeDatabase() *pgxpool.Pool {
+	log.Info("Initializing database")
+
 	var (
 		dbHost     = os.Getenv("DB_HOST")
 		dbPort     = os.Getenv("DB_PORT")
@@ -68,13 +83,13 @@ func initializeDatabase() (*pgxpool.Pool, error) {
 	)
 
 	if dbHost == "" || dbPort == "" || dbUser == "" || dbPassword == "" || dbName == "" {
-		return nil, fmt.Errorf("database environment variables not set")
+		log.Fatal("database environment variables not set")
 	}
 
 	url := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable", dbHost, dbPort, dbUser, dbPassword, dbName)
 	config, err := pgxpool.ParseConfig(url)
 	if err != nil {
-		return nil, err
+		log.Fatal("error configuring database: ", err)
 	}
 
 	config.MinConns = 5
@@ -84,9 +99,30 @@ func initializeDatabase() (*pgxpool.Pool, error) {
 
 	pool, err := pgxpool.NewWithConfig(context.Background(), config)
 	if err != nil {
-		log.Fatal("Error connecting to database: ", err)
-		return nil, err
+		log.Fatal("error connecting to database: ", err)
+	}
+	log.Info("Connected to database")
+	return pool
+}
+
+func setLogLevel(logLevel string) {
+	switch logLevel {
+	case "DEBUG":
+		log.SetLevel(log.DebugLevel)
+	case "INFO":
+		log.SetLevel(log.InfoLevel)
+	case "WARN":
+		log.SetLevel(log.WarnLevel)
+	case "ERROR":
+		log.SetLevel(log.ErrorLevel)
+	case "FATAL":
+		log.SetLevel(log.FatalLevel)
+	default:
+		log.SetLevel(log.InfoLevel)
 	}
 
-	return pool, nil
+	log.SetReportCaller(true)
+
+	log.SetOutput(os.Stdout)
+
 }
