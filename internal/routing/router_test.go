@@ -36,40 +36,111 @@ func setupMocks() (*mocks.MockDatabaseManager, *mocks.MockJwtManager, *mocks.Moc
 	return databaseMgrMock, jwtManagerMock, mailMgrMock
 }
 
-// Create user registration request
-func createUserRequest() RegisterUserRequest {
-	return RegisterUserRequest{
-		Username: "testUser",
-		Nickname: "testNickname",
-		Password: "test.Password123",
-		Email:    "test@example.com",
-	}
-}
-
+// TODO add tests for other routes
 func TestUserRegistration(t *testing.T) {
-	databaseMgrMock, jwtManagerMock, mailMgrMock := setupMocks()
 
-	router := InitRouter(databaseMgrMock, mailMgrMock, jwtManagerMock)
+	createUserRequest := func() RegisterUserRequest {
+		return RegisterUserRequest{
+			Username: "testUser",
+			Nickname: "testNickname",
+			Password: "test.Password123",
+			Email:    "test@example.com",
+		}
+	}
 
-	server := httptest.NewServer(router)
-	defer server.Close()
+	createUserRequestWithInvalidEmail := func() RegisterUserRequest {
+		return RegisterUserRequest{
+			Username: "testUser",
+			Nickname: "testNickname",
+			Password: "test.Password123",
+			Email:    "test@example@.com",
+		}
+	}
 
-	// Create user request
-	user := createUserRequest()
+	createUserRequestWithDuplicateUsername := func() RegisterUserRequest {
+		return RegisterUserRequest{
+			Username: "duplicateUser",
+			Nickname: "duplicateNickname",
+			Password: "duplicate.Password123",
+			Email:    "duplicate@example.com",
+		}
+	}
 
-	poolMock := databaseMgrMock.GetPool().(pgxmock.PgxPoolIface)
+	testCases := []struct {
+		name         string
+		user         RegisterUserRequest
+		status       int
+		responseBody map[string]interface{}
+	}{
+		{
+			"ValidRegistration",
+			createUserRequest(),
+			http.StatusCreated,
+			map[string]interface{}{
+				"username": "testUser",
+				"nickname": "testNickname",
+				"email":    "test@example.com",
+			},
+		},
+		{
+			"InvalidEmail",
+			createUserRequestWithInvalidEmail(),
+			http.StatusBadRequest,
+			map[string]interface{}{
+				"error": map[string]interface{}{
+					"code":    "ERR-001",
+					"message": "The request body is invalid. Please check the request body and try again.",
+				},
+			}},
+		{
+			"DuplicateUsername",
+			createUserRequestWithDuplicateUsername(),
+			http.StatusConflict,
+			map[string]interface{}{
+				"error": map[string]interface{}{
+					"code":    "ERR-002",
+					"message": "The username is already taken. Please try another username.",
+				},
+			},
+		},
+	}
 
-	// Mock database calls
-	poolMock.ExpectBegin()
-	poolMock.ExpectQuery("SELECT").WithArgs(user.Username, user.Email).WillReturnRows(pgxmock.NewRows([]string{"username", "email"}))
-	poolMock.ExpectExec("INSERT").WithArgs(pgxmock.AnyArg(), user.Username, user.Nickname, user.Email, pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg()).WillReturnResult(pgxmock.NewResult("INSERT", 1))
-	poolMock.ExpectExec("DELETE").WithArgs(pgxmock.AnyArg()).WillReturnResult(pgxmock.NewResult("DELETE", 0))
-	poolMock.ExpectExec("INSERT").WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg()).WillReturnResult(pgxmock.NewResult("INSERT", 1))
-	poolMock.ExpectCommit()
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
 
-	// Assert that the response status code is 201 and the response body contains the expected values
-	expect := httpexpect.Default(t, server.URL)
-	request := expect.POST("/api/v1/users").WithJSON(user)
-	response := request.Expect().Status(http.StatusCreated)
-	response.JSON().Object().ContainsKey("username").HasValue("username", user.Username).ContainsKey("nickname").HasValue("nickname", user.Nickname).ContainsKey("email").HasValue("email", user.Email)
+			databaseMgrMock, jwtManagerMock, mailMgrMock := setupMocks()
+
+			router := InitRouter(databaseMgrMock, mailMgrMock, jwtManagerMock)
+
+			server := httptest.NewServer(router)
+			defer server.Close()
+
+			poolMock := databaseMgrMock.GetPool().(pgxmock.PgxPoolIface)
+
+			// Mock database calls
+			poolMock.ExpectBegin()
+
+			switch tc.name {
+			case "InvalidEmail":
+			case "DuplicateUsername":
+				poolMock.ExpectQuery("SELECT").WithArgs(tc.user.Username, tc.user.Email).WillReturnRows(pgxmock.NewRows([]string{"username", "email"}).AddRow(tc.user.Username, tc.user.Email))
+			default:
+				poolMock.ExpectQuery("SELECT").WithArgs(tc.user.Username, tc.user.Email).WillReturnRows(pgxmock.NewRows([]string{"username", "email"}))
+				poolMock.ExpectExec("INSERT").WithArgs(pgxmock.AnyArg(), tc.user.Username, tc.user.Nickname, tc.user.Email, pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg()).WillReturnResult(pgxmock.NewResult("INSERT", 1))
+				poolMock.ExpectExec("DELETE").WithArgs(pgxmock.AnyArg()).WillReturnResult(pgxmock.NewResult("DELETE", 0))
+				poolMock.ExpectExec("INSERT").WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg()).WillReturnResult(pgxmock.NewResult("INSERT", 1))
+				poolMock.ExpectCommit()
+			}
+
+			// Assert that the response status code is 201 and the response body contains the expected values
+			expect := httpexpect.Default(t, server.URL)
+			request := expect.POST("/api/v1/users").WithJSON(tc.user)
+			response := request.Expect().Status(tc.status)
+			response.JSON().IsEqual(tc.responseBody)
+
+			if err := poolMock.ExpectationsWereMet(); err != nil {
+				t.Errorf("there were unfulfilled expectations: %s", err)
+			}
+		})
+	}
 }
