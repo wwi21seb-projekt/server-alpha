@@ -4,7 +4,7 @@ services:
   db:
     image: postgres:latest
     env_file:
-      - ../prod.env
+      - ../.env
     environment:
       - POSTGRES_DB=${DB_NAME}
       - POSTGRES_USER=${DB_USER}
@@ -22,10 +22,11 @@ services:
 
   app:
     image: "${SERVER_IMAGE:-ghcr.io/wwi21seb-projekt/server-alpha:main}" # It's possible to specify the image to use in the environment, default is the latest image from the github container registry
+    restart: unless-stopped # Restart the container unless it was stopped by the user
     depends_on:
       - db
     env_file:
-      - ../prod.env
+      - ../.env
     environment:
       - ENVIRONMENT=production
       - DB_HOST=db
@@ -38,11 +39,29 @@ services:
       - MAILGUN_API_KEY=${MAILGUN_API_KEY}
     ports:
       - "${APP_PORT}:8080"
+    networks:
+      - traefik_proxy
+      - default
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.alpha.entrypoints=websecure"
+      - "traefik.http.routers.alpha.rule=Host(`alpha.c930.net`)"
+      - "traefik.http.routers.alpha.tls=true"
+      - "traefik.http.routers.alpha.tls.certresolver=default"
+      - "traefik.http.routers.alpha.middlewares=secHeaders@file"
+      - "traefik.http.services.alpha.loadbalancer.server.port=8080" # Nicht den Host-Port verwenden sondern den internen Container port!
     healthcheck:
       test: "wget --no-verbose --tries=1 --spider http://app:8080/health || exit 1"
       interval: 10s
       timeout: 5s
       retries: 5
+
+networks:
+  traefik_proxy:
+    external:
+      name: traefik_proxy
+  default:
+    driver: bridge
 
 volumes:
   db_data:

@@ -43,8 +43,18 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           file: ./build/package/Dockerfile
 
+      - name: Copy docker-compose prod file to server
+        uses: appleboy/scp-action@v0.1.6
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          source: "deployments/docker-compose.prod.yml"
+          target: "/home/serveralpha"
+
       - name: Setup SSH
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@v1.0.1
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
@@ -52,4 +62,4 @@ jobs:
           port: ${{ secrets.DEPLOY_PORT }}
           script: |
             docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tags }}
-            docker-compose -f deployments/docker-compose.prod.yml -p server-alpha up -d
+            docker-compose -f /home/serveralpha/deployments/docker-compose.prod.yml -p server_alpha up -d
