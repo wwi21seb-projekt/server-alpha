@@ -49,21 +49,22 @@ func (handler *UserHandler) RegisterUser(w http.ResponseWriter, r *http.Request)
 	if tx == nil || transactionCtx == nil {
 		return
 	}
-	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel)
+	var err error
+	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel, err)
 
 	// Decode the request body into the registration request struct
 	registrationRequest := &schemas.RegistrationRequest{}
-	if err := utils.DecodeRequestBody(w, r, registrationRequest); err != nil {
+	if err = utils.DecodeRequestBody(w, r, registrationRequest); err != nil {
 		return
 	}
 
 	// Validate the registration request struct using the validator
-	if err := utils.ValidateStruct(w, registrationRequest); err != nil {
+	if err = utils.ValidateStruct(w, registrationRequest); err != nil {
 		return
 	}
 
 	// Check if the username or email is taken
-	if err := checkUsernameEmailTaken(transactionCtx, w, tx, registrationRequest.Username, registrationRequest.Email); err != nil {
+	if err = checkUsernameEmailTaken(transactionCtx, w, tx, registrationRequest.Username, registrationRequest.Email); err != nil {
 		return
 	}
 
@@ -87,18 +88,18 @@ func (handler *UserHandler) RegisterUser(w http.ResponseWriter, r *http.Request)
 	expiresAt := createdAt.Add(168 * time.Hour)
 
 	queryString := "INSERT INTO alpha_schema.users (user_id, username, nickname, email, password, created_at, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7)"
-	if _, err := tx.Exec(transactionCtx, queryString, userId, registrationRequest.Username, registrationRequest.Nickname, registrationRequest.Email, hashedPassword, createdAt, expiresAt); err != nil {
+	if _, err = tx.Exec(transactionCtx, queryString, userId, registrationRequest.Username, registrationRequest.Nickname, registrationRequest.Email, hashedPassword, createdAt, expiresAt); err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
 	// Generate a token for the user
-	if err := generateAndSendToken(w, handler, tx, transactionCtx, registrationRequest.Email, registrationRequest.Username, userId.String()); err != nil {
+	if err = generateAndSendToken(w, handler, tx, transactionCtx, registrationRequest.Email, registrationRequest.Username, userId.String()); err != nil {
 		return
 	}
 
 	// Commit the transaction
-	if err := utils.CommitTransaction(w, tx, transactionCtx, cancel); err != nil {
+	if err = utils.CommitTransaction(w, tx, transactionCtx, cancel); err != nil {
 		return
 	}
 
@@ -110,7 +111,7 @@ func (handler *UserHandler) RegisterUser(w http.ResponseWriter, r *http.Request)
 		Email:    registrationRequest.Email,
 	}
 
-	if err := json.NewEncoder(w).Encode(userDto); err != nil {
+	if err = json.NewEncoder(w).Encode(userDto); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -122,7 +123,8 @@ func (handler *UserHandler) ActivateUser(w http.ResponseWriter, r *http.Request)
 	if tx == nil || transactionCtx == nil {
 		return
 	}
-	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel)
+	var err error
+	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel, err)
 
 	// Decode the request body into the activation request struct
 	activationRequest := &schemas.ActivationRequest{}
@@ -183,7 +185,8 @@ func (handler *UserHandler) ResendToken(w http.ResponseWriter, r *http.Request) 
 	if tx == nil || transactionCtx == nil {
 		return
 	}
-	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel)
+	var err error
+	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel, err)
 
 	// Get username from path
 	username := chi.URLParam(r, "username")
@@ -219,7 +222,8 @@ func (handler *UserHandler) LoginUser(w http.ResponseWriter, r *http.Request) {
 	if tx == nil || transactionCtx == nil {
 		return
 	}
-	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel)
+	var err error
+	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel, err)
 
 	// Decode the request body into the login request struct
 	loginRequest := &schemas.LoginRequest{}

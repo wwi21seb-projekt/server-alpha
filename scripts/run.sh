@@ -1,10 +1,10 @@
 #!/bin/bash
 # Usage:
-# ./scripts/run.sh build      # to build the Docker images
-# ./scripts/run.sh up [app|db|all] # to start the services
-# ./scripts/run.sh down [app|db|all] # to stop the services
-# ./scripts/run.sh status     # to get the status of the services
-# ./scripts/run.sh clean      # to clean the database volume
+# ./scripts/run.sh build                # to build the Docker images
+# ./scripts/run.sh up [app|db|all|""]   # to start the services
+# ./scripts/run.sh down [app|db|all|""] # to stop the services
+# ./scripts/run.sh status               # to get the status of the services
+# ./scripts/run.sh clean                # to clean the database volume
 
 APP_SERVICE_NAME="app"
 DB_SERVICE_NAME="db"

@@ -1,19 +1,23 @@
 package managers
 
-import "github.com/jackc/pgx/v5/pgxpool"
+import (
+	log "github.com/sirupsen/logrus"
+	"server-alpha/internal/interfaces"
+)
 
 type DatabaseMgr interface {
-	GetPool() *pgxpool.Pool
+	GetPool() interfaces.PgxPoolIface
 }
 
 type DatabaseManager struct {
-	Pool *pgxpool.Pool
+	Pool interfaces.PgxPoolIface
 }
 
-func (dbMgr *DatabaseManager) GetPool() *pgxpool.Pool {
+func (dbMgr *DatabaseManager) GetPool() interfaces.PgxPoolIface {
 	return dbMgr.Pool
 }
 
-func NewDatabaseManager(pool *pgxpool.Pool) DatabaseMgr {
+func NewDatabaseManager(pool interfaces.PgxPoolIface) DatabaseMgr {
+	log.Info("Initializing database manager")
 	return &DatabaseManager{Pool: pool}
 }

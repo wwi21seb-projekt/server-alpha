@@ -4,16 +4,16 @@ import (
 	"context"
 	"errors"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"log"
+	log "github.com/sirupsen/logrus"
 	"net/http"
+	"server-alpha/internal/interfaces"
 	"server-alpha/internal/schemas"
 	"time"
 )
 
-func BeginTransaction(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool) (pgx.Tx, context.Context, context.CancelFunc) {
+func BeginTransaction(w http.ResponseWriter, r *http.Request, pool interfaces.PgxPoolIface) (pgx.Tx, context.Context, context.CancelFunc) {
 	// Begin a new transaction
-	transactionCtx, cancel := context.WithDeadline(r.Context(), time.Now().Add(5*time.Second))
+	transactionCtx, cancel := context.WithDeadline(r.Context(), time.Now().Add(500*time.Second))
 
 	tx, err := pool.Begin(transactionCtx)
 	if err != nil {
@@ -25,28 +25,41 @@ func BeginTransaction(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool
 	return tx, transactionCtx, cancel
 }
 
-func RollbackTransaction(w http.ResponseWriter, tx pgx.Tx, ctx context.Context, cancel context.CancelFunc) {
-	err := tx.Rollback(ctx)
-
+func RollbackTransaction(w http.ResponseWriter, tx pgx.Tx, ctx context.Context, cancel context.CancelFunc, err error) {
 	if err != nil {
-		if errors.Is(err, pgx.ErrTxClosed) {
-			return
-		}
+		log.Debug("Rolling back transaction due to error: ", err)
+		err = tx.Rollback(ctx)
 
-		cancel()
-		WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		if err != nil {
+			if errors.Is(err, pgx.ErrTxClosed) {
+				return
+			}
+
+			cancel()
+			log.Debug("Context canceled")
+			WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		}
+		log.Debug("Transaction rolled back")
 	}
 }
 
 func CommitTransaction(w http.ResponseWriter, tx pgx.Tx, ctx context.Context, cancel context.CancelFunc) error {
+	log.Info("Committing transaction")
 	err := tx.Commit(ctx)
-	defer cancel()
+	defer func() {
+		if err := ctx.Err(); err != nil {
+			log.Debug("Context error: ", err)
+		}
+		cancel()
+		log.Debug("Context canceled")
+	}()
 
 	if err != nil {
-		log.Println(err)
+		log.Debug("Rolling back transaction due to error: ", err)
 		WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return err
 	}
 
+	log.Info("Transaction committed")
 	return nil
 }

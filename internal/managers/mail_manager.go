@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/mailgun/mailgun-go/v4"
 	"github.com/matcornic/hermes/v2"
+	log "github.com/sirupsen/logrus"
 	"os"
 	"time"
 )
@@ -20,8 +21,13 @@ type MailManager struct {
 }
 
 var from = "Server Alpha <team@mail.server-alpha.tech>"
+var environment string
 
 func (mm *MailManager) SendActivationMail(email, username, token, serviceName string) error {
+	if environment != "production" {
+		log.Info("Skipping confirmation mail in development mode")
+		return nil
+	}
 	mailBody := hermes.Email{
 		Body: hermes.Body{
 			Name: username,
@@ -47,19 +53,32 @@ func (mm *MailManager) SendActivationMail(email, username, token, serviceName st
 	}
 
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(2*time.Second))
-	defer cancel()
+	defer func() {
+		if err := ctx.Err(); err != nil {
+			log.Debug("Context error: ", err)
+		}
+		cancel()
+		log.Debug("Context canceled")
+	}()
 
 	message := mm.Mailgun.NewMessage(from, "Activate your account", "", email)
 	message.SetHtml(emailBody)
 	_, _, err = mm.Mailgun.Send(ctx, message)
 	if err != nil {
+		log.Warning("Error sending activation mail: " + err.Error())
 		return err
 	}
+	log.Debug("Activation mail sent to ", email)
 
 	return nil
 }
 
 func (mm *MailManager) SendConfirmationMail(email, username, serviceName string) error {
+	if environment != "production" {
+		log.Info("Skipping confirmation mail in development mode")
+		return nil
+	}
+
 	mailBody := hermes.Email{
 		Body: hermes.Body{
 			Name: username,
@@ -80,23 +99,39 @@ func (mm *MailManager) SendConfirmationMail(email, username, serviceName string)
 	}
 
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(2*time.Second))
-	defer cancel()
+	defer func() {
+		if err := ctx.Err(); err != nil {
+			log.Debug("Context error: ", err)
+		}
+		cancel()
+		log.Debug("Context canceled")
+	}()
 
 	message := mm.Mailgun.NewMessage(from, "Account successfully activated", emailBody, email)
 	_, _, err = mm.Mailgun.Send(ctx, message)
 	if err != nil {
+		log.Warning("Error sending confirmation mail: " + err.Error())
 		return err
 	}
+	log.Debug("Confirmation mail sent to ", email)
 
 	return nil
 }
 
 func NewMailManager() MailMgr {
+	log.Info("Initializing mail manager")
+	// Check if running in production
+	environment = os.Getenv("ENVIRONMENT")
+
+	if environment != "production" {
+		log.Println("Running in development mode, email will not be sent to users")
+	}
+
 	apiKey := os.Getenv("MAILGUN_API_KEY")
 	mailgunInstance := mailgun.NewMailgun("mail.server-alpha.tech", apiKey)
 	mailgunInstance.SetAPIBase(mailgun.APIBaseEU)
 
-	return &MailManager{
+	mm := &MailManager{
 		Hermes: &hermes.Hermes{
 			Theme:         new(hermes.Default),
 			TextDirection: hermes.TDLeftToRight,
@@ -110,4 +145,6 @@ func NewMailManager() MailMgr {
 		},
 		Mailgun: mailgunInstance,
 	}
+	log.Info("Initialized mail manager")
+	return mm
 }
