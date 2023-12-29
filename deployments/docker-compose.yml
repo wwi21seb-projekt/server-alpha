@@ -27,6 +27,7 @@ services:
     env_file:
       - ../.env
     environment:
+      - ENVIRONMENT=development
       - DB_HOST=db
       - DB_PORT=${DB_PORT}
       - DB_NAME=${DB_NAME}

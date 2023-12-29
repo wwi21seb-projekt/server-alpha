@@ -24,6 +24,7 @@ fi
 
 # Environment variables with default values
 {
+  echo "APP_HOST=localhost"
   echo "APP_PORT=8080"
   echo "DB_NAME=server_alpha_db"
   echo "DB_PORT=5432"

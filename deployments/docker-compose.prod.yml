@@ -15,19 +15,19 @@ services:
       - db_data:/var/lib/postgresql/data
       - ./server_alpha_db.sql:/docker-entrypoint-initdb.d/initdb.sql
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U $$DB_USER" ]
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}" ]
       interval: 10s
       timeout: 5s
       retries: 5
 
   app:
-    # It's possible to specify the image to use in the environment, default is the latest image from the github container registry
-    image: "${SERVER_IMAGE:-ghcr.io/wwi21seb-projekt/server-alpha:main}"
+    image: "${SERVER_IMAGE:-ghcr.io/wwi21seb-projekt/server-alpha:main}" # It's possible to specify the image to use in the environment, default is the latest image from the github container registry
     depends_on:
       - db
     env_file:
       - ../prod.env
     environment:
+      - ENVIRONMENT=production
       - DB_HOST=db
       - DB_PORT=${DB_PORT}
       - DB_NAME=${DB_NAME}
@@ -35,6 +35,14 @@ services:
       - DB_PASS=${DB_PASS}
       - JWT_PRIVATE_KEY=${JWT_PRIVATE_KEY}
       - JWT_PUBLIC_KEY=${JWT_PUBLIC_KEY}
+      - MAILGUN_API_KEY=${MAILGUN_API_KEY}
+    ports:
+      - "${APP_PORT}:8080"
+    healthcheck:
+      test: "wget --no-verbose --tries=1 --spider http://app:8080/health || exit 1"
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   db_data:

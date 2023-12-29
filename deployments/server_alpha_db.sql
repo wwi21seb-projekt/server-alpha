@@ -39,7 +39,7 @@ CREATE TABLE alpha_schema.users (
 	username varchar(25) NOT NULL,
 	nickname varchar(20) NOT NULL,
 	email varchar(128) NOT NULL,
-	password varchar(32) NOT NULL,
+	password char(60) NOT NULL,
 	created_at timestamptz NOT NULL,
 	activated_at timestamptz,
 	expires_at timestamptz,
