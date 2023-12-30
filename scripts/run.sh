@@ -19,15 +19,16 @@ print_message() {
   echo -e "\033[${COLOR}m${TEXT}\033[0m"
 }
 
+
+# Go to the base directory
+BASE_DIR=$(dirname "$0")/..
+cd "$BASE_DIR" || exit
+
 # Check if .env file exists
 if [[ ! -e .env ]]; then
   print_message "31" "No .env file found. Running setup_env.sh..."
   ./scripts/setup_env.sh
 fi
-
-# Go to the base directory
-BASE_DIR=$(dirname "$0")/..
-cd "$BASE_DIR" || exit
 
 case $COMMAND in
 up)

@@ -3,8 +3,7 @@ package managers
 import (
 	"context"
 	"crypto/ed25519"
-	"crypto/x509"
-	"encoding/pem"
+	"encoding/base64"
 	"fmt"
 	"github.com/golang-jwt/jwt/v5"
 	"net/http"
@@ -44,47 +43,23 @@ func NewJWTManager() (JWTMgr, error) {
 }
 
 // parsePrivateKey parses a PEM formatted private key.
-func parsePrivateKey(privKeyB64Str string) (ed25519.PrivateKey, error) {
-	privKeyPemStr := fmt.Sprintf("-----BEGIN PRIVATE KEY-----\n%s\n-----END PRIVATE KEY-----", privKeyB64Str)
-
-	block, _ := pem.Decode([]byte(privKeyPemStr))
-	if block == nil {
-		return nil, fmt.Errorf("failed to parse PEM block containing the private key")
-	}
-
-	priv, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+func parsePrivateKey(privateKeyBase64 string) (ed25519.PrivateKey, error) {
+	privateKeyBytes, err := base64.StdEncoding.DecodeString(privateKeyBase64)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse private key: %w", err)
+		return nil, err
 	}
 
-	ed25519Priv, ok := priv.(ed25519.PrivateKey)
-	if !ok {
-		return nil, fmt.Errorf("invalid private key type, expected ed25519.PrivateKey")
-	}
-
-	return ed25519Priv, nil
+	return privateKeyBytes, nil
 }
 
 // parsePublicKey parses a PEM formatted public key.
-func parsePublicKey(pubKeyB64Str string) (ed25519.PublicKey, error) {
-	pubKeyPemStr := fmt.Sprintf("-----BEGIN PUBLIC KEY-----\n%s\n-----END PUBLIC KEY-----", pubKeyB64Str)
-
-	block, _ := pem.Decode([]byte(pubKeyPemStr))
-	if block == nil {
-		return nil, fmt.Errorf("failed to parse PEM block containing the public key")
-	}
-
-	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
+func parsePublicKey(publicKeyBase64 string) (ed25519.PublicKey, error) {
+	publicKeyBytes, err := base64.StdEncoding.DecodeString(publicKeyBase64)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse public key: %w", err)
+		return nil, err
 	}
 
-	ed25519Pub, ok := pub.(ed25519.PublicKey)
-	if !ok {
-		return nil, fmt.Errorf("invalid public key type, expected ed25519.PublicKey")
-	}
-
-	return ed25519Pub, nil
+	return publicKeyBytes, nil
 }
 
 // GenerateClaims generates the standard JWT claims.
