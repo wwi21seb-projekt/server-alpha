@@ -32,7 +32,8 @@ func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 	if tx == nil || transactionCtx == nil {
 		return
 	}
-	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel)
+	var err error
+	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel, err)
 
 	// Decode the request body into the registration request struct
 	createPostRequest := &schemas.CreatePostRequest{}
@@ -54,7 +55,7 @@ func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 	createdAt := time.Now()
 
 	queryString := "INSERT INTO alpha_schema.posts (post_id, author_id, content, created_at) VALUES($1, $2, $3, $4)"
-	_, err := tx.Exec(transactionCtx, queryString, postId, userId, createPostRequest.Content, createdAt)
+	_, err = tx.Exec(transactionCtx, queryString, postId, userId, createPostRequest.Content, createdAt)
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
