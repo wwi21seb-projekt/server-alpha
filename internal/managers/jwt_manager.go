@@ -3,9 +3,12 @@ package managers
 import (
 	"context"
 	"crypto/ed25519"
-	"encoding/base64"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"github.com/golang-jwt/jwt/v5"
+	log "github.com/sirupsen/logrus"
 	"net/http"
 	"os"
 	"server-alpha/internal/schemas"
@@ -28,44 +31,137 @@ type JWTManager struct {
 
 // NewJWTManager creates a new JWTManager with the initial key pair.
 func NewJWTManager() (JWTMgr, error) {
-	privateKey, err := parsePrivateKey(os.Getenv("JWT_PRIVATE_KEY"))
+	log.Info("Initializing JWT manager...")
+	privateKeyPath := "private_key.pem"
+	publicKeyPath := "public_key.pem"
+
+	// Generate a new key pair if the private key does not exist
+	if _, err := os.Stat(privateKeyPath); os.IsNotExist(err) {
+		err := generateAndStoreKeys(privateKeyPath, publicKeyPath)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Read the private key from file
+	privateKeyBytes, err := os.ReadFile(privateKeyPath)
 	if err != nil {
+		log.Errorf("failed to read private key: %v", err)
 		return nil, err
 	}
-	publicKey, err := parsePublicKey(os.Getenv("JWT_PUBLIC_KEY"))
+
+	// Decode the private key from PEM format
+	privateKeyBlock, _ := pem.Decode(privateKeyBytes)
+	if privateKeyBlock == nil {
+		return nil, fmt.Errorf("failed to decode private key block from PEM format")
+	}
+
+	// Parse the private key
+	privateKey, err := x509.ParsePKCS8PrivateKey(privateKeyBlock.Bytes)
 	if err != nil {
+		log.Errorf("failed to parse private key: %v", err)
 		return nil, err
 	}
+
+	// Read the public key from file
+	publicKeyBytes, err := os.ReadFile(publicKeyPath)
+	if err != nil {
+		log.Errorf("failed to read public key: %v", err)
+		return nil, err
+	}
+
+	// Decode the public key from PEM format
+	publicKeyBlock, _ := pem.Decode(publicKeyBytes)
+	if publicKeyBlock == nil {
+		return nil, fmt.Errorf("failed to decode public key block from PEM format")
+	}
+
+	// Parse the public key from the decoded PEM block
+	publicKey, err := x509.ParsePKIXPublicKey(publicKeyBlock.Bytes)
+	if err != nil {
+		log.Errorf("failed to parse public key: %v", err)
+		return nil, err
+	}
+
+	log.Info("Initialized JWT manager")
+
 	return &JWTManager{
-		privateKey: privateKey,
-		publicKey:  publicKey,
+		privateKey: privateKey.(ed25519.PrivateKey),
+		publicKey:  publicKey.(ed25519.PublicKey),
 	}, nil
 }
 
-// parsePrivateKey parses a PEM formatted private key.
-func parsePrivateKey(privateKeyBase64 string) (ed25519.PrivateKey, error) {
-	privateKeyBytes, err := base64.StdEncoding.DecodeString(privateKeyBase64)
-	decodedLen := len(privateKeyBytes)
-	if decodedLen != ed25519.PrivateKeySize {
-		return nil, fmt.Errorf("invalid private key length: expected %d, got %d", ed25519.PrivateKeySize, decodedLen)
-	}
+func generateAndStoreKeys(privateKeyPath string, publicKeyPath string) error {
+	log.Info("Generating new key pair...")
+
+	// Generate a new key pair if the private key does not exist
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
-		return nil, err
+		log.Errorf("failed to generate key pair: %v", err)
+		return err
 	}
 
-	return privateKeyBytes, nil
-}
-
-// parsePublicKey parses a PEM formatted public key.
-func parsePublicKey(publicKeyBase64 string) (ed25519.PublicKey, error) {
-	//publicKeyBytes, err := base64.StdEncoding.DecodeString(publicKeyBase64)
-	publicKeyBytes := []byte(publicKeyBase64)
-	decodedLen := len(publicKeyBytes)
-	if decodedLen != ed25519.PublicKeySize {
-		return nil, fmt.Errorf("invalid public key length: expected %d, got %d", ed25519.PublicKeySize, decodedLen)
+	// Save the private key
+	privateKeyBytes, err := x509.MarshalPKCS8PrivateKey(privateKey)
+	if err != nil {
+		log.Errorf("failed to marshal private key: %v", err)
+		return err
 	}
 
-	return publicKeyBytes, nil
+	privateBlock := &pem.Block{
+		Type:  "PRIVATE KEY",
+		Bytes: privateKeyBytes,
+	}
+
+	privateKeyFile, err := os.Create(privateKeyPath)
+	if err != nil {
+		log.Errorf("failed to create private key file: %v", err)
+		return err
+	}
+	defer func(privateKeyFile *os.File) {
+		err := privateKeyFile.Close()
+		if err != nil {
+			log.Errorf("failed to close private key file: %v", err)
+		}
+	}(privateKeyFile)
+
+	err = pem.Encode(privateKeyFile, privateBlock)
+	if err != nil {
+		log.Errorf("failed to encode private key: %v", err)
+		return err
+	}
+
+	publicKeyBytes, err := x509.MarshalPKIXPublicKey(publicKey)
+	if err != nil {
+		log.Errorf("failed to marshal public key: %v", err)
+		return err
+	}
+
+	publicBlock := &pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: publicKeyBytes,
+	}
+
+	publicKeyFile, err := os.Create(publicKeyPath)
+	if err != nil {
+		log.Errorf("failed to create public key file: %v", err)
+		return err
+	}
+
+	defer func(publicKeyFile *os.File) {
+		err := publicKeyFile.Close()
+		if err != nil {
+			log.Errorf("failed to close public key file: %v", err)
+		}
+	}(publicKeyFile)
+
+	err = pem.Encode(publicKeyFile, publicBlock)
+	if err != nil {
+		log.Errorf("failed to encode public key: %v", err)
+		return err
+	}
+	log.Info("Generated new key pair")
+	return nil
 }
 
 // GenerateClaims generates the standard JWT claims.
