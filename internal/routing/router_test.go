@@ -11,7 +11,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"server-alpha/internal/managers"
 	"server-alpha/internal/managers/mocks"
 	"strings"
@@ -28,7 +27,7 @@ type User struct {
 	Email          string `json:"email"`
 }
 
-func setupMocks() (*mocks.MockDatabaseManager, managers.JWTMgr, *mocks.MockMailManager) {
+func setupMocks(t *testing.T) (*mocks.MockDatabaseManager, managers.JWTMgr, *mocks.MockMailManager) {
 	poolMock, err := pgxmock.NewPool()
 	if err != nil {
 		panic(err)
@@ -39,7 +38,7 @@ func setupMocks() (*mocks.MockDatabaseManager, managers.JWTMgr, *mocks.MockMailM
 
 	publicKey, privateKey, err := ed25519.GenerateKey(nil)
 	if err != nil {
-		log.Fatalf("Failed to generate ed25519 keys: %v", err)
+		log.Error("Failed to generate ed25519 keys:", err)
 	}
 
 	privateBlock := &pem.Block{
@@ -63,8 +62,8 @@ func setupMocks() (*mocks.MockDatabaseManager, managers.JWTMgr, *mocks.MockMailM
 	publicKeyPem = strings.Replace(publicKeyPem, "\n-----END PUBLIC KEY-----", "", 1)
 	publicKeyPem = strings.TrimSpace(publicKeyPem)
 
-	_ = os.Setenv("JWT_PRIVATE_KEY", privateKeyPem)
-	_ = os.Setenv("JWT_PUBLIC_KEY", publicKeyPem)
+	t.Setenv("JWT_PRIVATE_KEY", privateKeyPem)
+	t.Setenv("JWT_PUBLIC_KEY", publicKeyPem)
 
 	jwtMgr, err := managers.NewJWTManager()
 	if err != nil {
@@ -149,7 +148,7 @@ func TestUserRegistration(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 
-			databaseMgrMock, jwtManagerMock, mailMgrMock := setupMocks()
+			databaseMgrMock, jwtManagerMock, mailMgrMock := setupMocks(t)
 
 			router := InitRouter(databaseMgrMock, mailMgrMock, jwtManagerMock)
 
@@ -220,7 +219,7 @@ func TestUserLogin(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			databaseMgrMock, jwtManagerMock, mailMgrMock := setupMocks()
+			databaseMgrMock, jwtManagerMock, mailMgrMock := setupMocks(t)
 
 			router := InitRouter(databaseMgrMock, mailMgrMock, jwtManagerMock)
 
