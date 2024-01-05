@@ -41,6 +41,8 @@ CREATE TABLE alpha_schema.users (
 	email varchar(128) NOT NULL,
 	password char(60) NOT NULL,
 	created_at timestamptz NOT NULL,
+    status varchar(256),
+    profile_picture_url varchar(256),
 	activated_at timestamptz,
 	expires_at timestamptz,
 	CONSTRAINT user_id_pk PRIMARY KEY (user_id)
@@ -79,10 +81,11 @@ CREATE TABLE alpha_schema.posts (
 -- object: alpha_schema.subscriptions | type: TABLE --
 -- DROP TABLE IF EXISTS alpha_schema.subscriptions CASCADE;
 CREATE TABLE alpha_schema.subscriptions (
+    subscription_id uuid NOT NULL, -- TODO: Besprechen ob man das überhaupt braucht
 	subscribee_id uuid NOT NULL,
 	subscriber_id uuid NOT NULL,
 	created_at timestamptz NOT NULL,
-	CONSTRAINT subscriptions_pk PRIMARY KEY (subscribee_id,subscriber_id)
+	CONSTRAINT subscriptions_pk PRIMARY KEY (subscription_id)
 );
 -- ddl-end --
 

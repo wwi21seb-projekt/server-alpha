@@ -22,6 +22,9 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 	// Initialize handlers
 	postHdl := handlers.NewPostHandler(&databaseMgr)
 
+	// Initialize user handlers
+	userHdl := handlers.NewUserHandler(&databaseMgr, &jwtMgr, &mailMgr)
+
 	// Initialize health check route
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		// Ping the database
@@ -35,7 +38,14 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 	})
 
 	// Initialize user routes
-	r.Route("/api/v1/users", userRouter(&databaseMgr, &jwtMgr, &mailMgr))
+	r.Route("/api/v1/users", func(r chi.Router) {
+		r.Post("/", userHdl.RegisterUser)
+		r.Post("/login", userHdl.LoginUser)
+		r.Post("/{username}/activate", userHdl.ActivateUser)
+		r.Delete("/{username}/activate", userHdl.ResendToken)
+
+		r.With(jwtMgr.JWTMiddleware).Get("/{username}", userHdl.GetUser)
+	})
 
 	// Initialize post routes
 	r.Route("/api/v1/posts", func(r chi.Router) {
@@ -44,15 +54,4 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 	})
 
 	return r
-}
-
-func userRouter(databaseMgr *managers.DatabaseMgr, jwtMgr *managers.JWTMgr, mailMgr *managers.MailMgr) func(chi.Router) {
-	return func(r chi.Router) {
-		userHdl := handlers.NewUserHandler(databaseMgr, jwtMgr, mailMgr)
-
-		r.Post("/", userHdl.RegisterUser)
-		r.Post("/login", userHdl.LoginUser)
-		r.Post("/{username}/activate", userHdl.ActivateUser)
-		r.Delete("/{username}/activate", userHdl.ResendToken)
-	}
 }

@@ -45,6 +45,10 @@ func NewJWTManager() (JWTMgr, error) {
 // parsePrivateKey parses a PEM formatted private key.
 func parsePrivateKey(privateKeyBase64 string) (ed25519.PrivateKey, error) {
 	privateKeyBytes, err := base64.StdEncoding.DecodeString(privateKeyBase64)
+	decodedLen := len(privateKeyBytes)
+	if decodedLen != ed25519.PrivateKeySize {
+		return nil, fmt.Errorf("invalid private key length: expected %d, got %d", ed25519.PrivateKeySize, decodedLen)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -54,9 +58,11 @@ func parsePrivateKey(privateKeyBase64 string) (ed25519.PrivateKey, error) {
 
 // parsePublicKey parses a PEM formatted public key.
 func parsePublicKey(publicKeyBase64 string) (ed25519.PublicKey, error) {
-	publicKeyBytes, err := base64.StdEncoding.DecodeString(publicKeyBase64)
-	if err != nil {
-		return nil, err
+	//publicKeyBytes, err := base64.StdEncoding.DecodeString(publicKeyBase64)
+	publicKeyBytes := []byte(publicKeyBase64)
+	decodedLen := len(publicKeyBytes)
+	if decodedLen != ed25519.PublicKeySize {
+		return nil, fmt.Errorf("invalid public key length: expected %d, got %d", ed25519.PublicKeySize, decodedLen)
 	}
 
 	return publicKeyBytes, nil

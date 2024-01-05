@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	log "github.com/sirupsen/logrus"
 	"math/rand"
 	"net/http"
 	"strconv"
@@ -25,6 +27,7 @@ type UserHdl interface {
 	ActivateUser(w http.ResponseWriter, r *http.Request)
 	ResendToken(w http.ResponseWriter, r *http.Request)
 	LoginUser(w http.ResponseWriter, r *http.Request)
+	GetUser(w http.ResponseWriter, r *http.Request)
 }
 
 type UserHandler struct {
@@ -32,6 +35,85 @@ type UserHandler struct {
 	JWTManager      managers.JWTMgr
 	MailManager     managers.MailMgr
 	Validator       *utils.Validator
+}
+
+func (handler *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithDeadline(r.Context(), time.Now().Add(500*time.Second))
+	defer func() {
+		if err := ctx.Err(); err != nil {
+			log.Debug("Context error: ", err)
+		}
+		cancel()
+		log.Debug("Context canceled")
+	}()
+
+	user := schemas.UserProfileDTO{}
+
+	// Get username from path
+	username := chi.URLParam(r, "username")
+
+	queryString := "SELECT user_id, username, nickname, status, profile_picture_url FROM alpha_schema.users WHERE username = $1" //TODO: Add ProfilePictureURL & status
+
+	rows, err := handler.DatabaseManager.GetPool().Query(ctx, queryString, username)
+	if err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+	defer rows.Close()
+
+	var userId uuid.UUID
+
+	if rows.Next() {
+		if err := rows.Scan(&userId, &user.Username, &user.Nickname, &user.Status, &user.ProfilePicture); err != nil {
+			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+			return
+		}
+	} else {
+		utils.WriteAndLogError(w, schemas.UserNotFound, http.StatusNotFound, errors.New("user not found"))
+		return
+	}
+
+	queryString = "SELECT COUNT(*) FROM alpha_schema.posts WHERE author_id = $1"
+
+	row := handler.DatabaseManager.GetPool().QueryRow(ctx, queryString, userId)
+	if err := row.Scan(&user.Posts); err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+
+	queryString = "SELECT COUNT(*) FROM alpha_schema.subscriptions WHERE subscribee_id = $1"
+	row = handler.DatabaseManager.GetPool().QueryRow(ctx, queryString, userId)
+	if err := row.Scan(&user.Follower); err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+
+	queryString = "SELECT COUNT(*) FROM alpha_schema.subscriptions WHERE subscriber_id = $1"
+	row = handler.DatabaseManager.GetPool().QueryRow(ctx, queryString, userId)
+	if err := row.Scan(&user.Following); err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Get the user ID from the JWT token
+	claims := r.Context().Value("claims").(jwt.MapClaims)
+
+	// Create the post
+	jwtUserId := claims["sub"].(string)
+
+	queryString = "SELECT subscription_id FROM alpha_schema.subscriptions WHERE subscriber_id = $1 AND subscribee_id $2"
+	row = handler.DatabaseManager.GetPool().QueryRow(ctx, queryString, jwtUserId, userId)
+	if err := row.Scan(&user.SubscriptionId); err != nil {
+		user.SubscriptionId = nil
+	}
+
+	// Send success response
+	w.WriteHeader(http.StatusOK)
+
+	if err = json.NewEncoder(w).Encode(user); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 }
 
 func NewUserHandler(databaseManager *managers.DatabaseMgr, jwtManager *managers.JWTMgr, mailManager *managers.MailMgr) UserHdl {
@@ -87,8 +169,8 @@ func (handler *UserHandler) RegisterUser(w http.ResponseWriter, r *http.Request)
 	createdAt := time.Now()
 	expiresAt := createdAt.Add(168 * time.Hour)
 
-	queryString := "INSERT INTO alpha_schema.users (user_id, username, nickname, email, password, created_at, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7)"
-	if _, err = tx.Exec(transactionCtx, queryString, userId, registrationRequest.Username, registrationRequest.Nickname, registrationRequest.Email, hashedPassword, createdAt, expiresAt); err != nil {
+	queryString := "INSERT INTO alpha_schema.users (user_id, username, nickname, email, password, created_at, expires_at, status, profile_picture_url) VALUES ($1, $2, $3, $4, $5, $6, $7,$8,$9)"
+	if _, err = tx.Exec(transactionCtx, queryString, userId, registrationRequest.Username, registrationRequest.Nickname, registrationRequest.Email, hashedPassword, createdAt, expiresAt, "", ""); err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}

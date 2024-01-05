@@ -1,5 +1,7 @@
 package schemas
 
+import "github.com/google/uuid"
+
 // ErrorDTO is a struct that represents an error response
 // Error is the custom error, see CustomError
 type ErrorDTO struct {
@@ -76,4 +78,15 @@ type LoginRequest struct {
 // Content is required and must be less than 256 characters, as well as written in UTF-8
 type CreatePostRequest struct {
 	Content string `json:"content" validate:"required,max=256,post_validation"`
+}
+
+type UserProfileDTO struct {
+	Username       string     `json:"username"`
+	Nickname       string     `json:"nickname"`
+	Status         string     `json:"status"`
+	ProfilePicture string     `json:"profilePicture"`
+	Follower       int        `json:"follower"`
+	Following      int        `json:"following"`
+	Posts          int        `json:"posts"`
+	SubscriptionId *uuid.UUID `json:"subscriptionId"`
 }
