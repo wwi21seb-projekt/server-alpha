@@ -96,9 +96,7 @@ func (handler *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get the user ID from the JWT token
-	claims := r.Context().Value("claims").(jwt.MapClaims)
-
-	// Create the post
+	claims := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
 	jwtUserId := claims["sub"].(string)
 
 	queryString = "SELECT subscription_id FROM alpha_schema.subscriptions WHERE subscriber_id = $1 AND subscribee_id $2"
