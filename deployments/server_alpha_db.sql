@@ -40,18 +40,18 @@ CREATE TABLE alpha_schema.users (
 	nickname varchar(20) NOT NULL,
 	email varchar(128) NOT NULL,
 	password char(60) NOT NULL,
+	status varchar(256) NOT NULL,
+	profile_picture_url varchar(256) NOT NULL,
 	created_at timestamptz NOT NULL,
-    status varchar(256),
-    profile_picture_url varchar(256),
 	activated_at timestamptz,
 	expires_at timestamptz,
 	CONSTRAINT user_id_pk PRIMARY KEY (user_id)
 );
 -- ddl-end --
 
--- object: alpha_schema.user_token | type: TABLE --
--- DROP TABLE IF EXISTS alpha_schema.user_token CASCADE;
-CREATE TABLE alpha_schema.user_token (
+-- object: alpha_schema.activation_tokens | type: TABLE --
+-- DROP TABLE IF EXISTS alpha_schema.activation_tokens CASCADE;
+CREATE TABLE alpha_schema.activation_tokens (
 	token_id uuid NOT NULL,
 	token varchar(6) NOT NULL,
 	expires_at timestamptz,
@@ -61,8 +61,8 @@ CREATE TABLE alpha_schema.user_token (
 -- ddl-end --
 
 -- object: users_fk | type: CONSTRAINT --
--- ALTER TABLE alpha_schema.user_token DROP CONSTRAINT IF EXISTS users_fk CASCADE;
-ALTER TABLE alpha_schema.user_token ADD CONSTRAINT users_fk FOREIGN KEY (user_id)
+-- ALTER TABLE alpha_schema.activation_tokens DROP CONSTRAINT IF EXISTS users_fk CASCADE;
+ALTER TABLE alpha_schema.activation_tokens ADD CONSTRAINT users_fk FOREIGN KEY (user_id)
 REFERENCES alpha_schema.users (user_id) MATCH FULL
 ON DELETE CASCADE ON UPDATE CASCADE;
 -- ddl-end --
@@ -81,12 +81,14 @@ CREATE TABLE alpha_schema.posts (
 -- object: alpha_schema.subscriptions | type: TABLE --
 -- DROP TABLE IF EXISTS alpha_schema.subscriptions CASCADE;
 CREATE TABLE alpha_schema.subscriptions (
-    subscription_id uuid NOT NULL, -- TODO: Besprechen ob man das überhaupt braucht
-	subscribee_id uuid NOT NULL,
-	subscriber_id uuid NOT NULL,
+	subscription_id uuid NOT NULL,
 	created_at timestamptz NOT NULL,
+	subscriber_id uuid NOT NULL,
+	subscribee_id uuid NOT NULL,
 	CONSTRAINT subscriptions_pk PRIMARY KEY (subscription_id)
 );
+-- ddl-end --
+COMMENT ON COLUMN alpha_schema.subscriptions.subscription_id IS E'TODO: Besprechen ob man das überhaupt braucht';
 -- ddl-end --
 
 -- object: users_fk | type: CONSTRAINT --
@@ -96,69 +98,35 @@ REFERENCES alpha_schema.users (user_id) MATCH FULL
 ON DELETE CASCADE ON UPDATE CASCADE;
 -- ddl-end --
 
--- object: subscribee_fk | type: CONSTRAINT --
--- ALTER TABLE alpha_schema.subscriptions DROP CONSTRAINT IF EXISTS subscribee_fk CASCADE;
-ALTER TABLE alpha_schema.subscriptions ADD CONSTRAINT subscribee_fk FOREIGN KEY (subscribee_id)
-REFERENCES alpha_schema.users (user_id) MATCH FULL
-ON DELETE CASCADE ON UPDATE CASCADE;
--- ddl-end --
-
--- object: subscriber_fk | type: CONSTRAINT --
--- ALTER TABLE alpha_schema.subscriptions DROP CONSTRAINT IF EXISTS subscriber_fk CASCADE;
-ALTER TABLE alpha_schema.subscriptions ADD CONSTRAINT subscriber_fk FOREIGN KEY (subscriber_id)
-REFERENCES alpha_schema.users (user_id) MATCH FULL
-ON DELETE CASCADE ON UPDATE CASCADE;
--- ddl-end --
-
 -- object: alpha_schema.hashtags | type: TABLE --
 -- DROP TABLE IF EXISTS alpha_schema.hashtags CASCADE;
 CREATE TABLE alpha_schema.hashtags (
+	hashtag_id uuid NOT NULL,
+	content varchar(32) NOT NULL,
+	CONSTRAINT hashtags_pk PRIMARY KEY (hashtag_id),
+	CONSTRAINT hashtags_uq UNIQUE (content)
 );
 -- ddl-end --
 
--- object: hashtag_id | type: COLUMN --
--- ALTER TABLE alpha_schema.hashtags DROP COLUMN IF EXISTS hashtag_id CASCADE;
-ALTER TABLE alpha_schema.hashtags ADD COLUMN hashtag_id uuid NOT NULL;
--- ddl-end --
-
-
--- object: content | type: COLUMN --
--- ALTER TABLE alpha_schema.hashtags DROP COLUMN IF EXISTS content CASCADE;
-ALTER TABLE alpha_schema.hashtags ADD COLUMN content varchar(32) NOT NULL;
--- ddl-end --
-
-
-
--- object: hashtags_pk | type: CONSTRAINT --
--- ALTER TABLE alpha_schema.hashtags DROP CONSTRAINT IF EXISTS hashtags_pk CASCADE;
-ALTER TABLE alpha_schema.hashtags ADD CONSTRAINT hashtags_pk PRIMARY KEY (hashtag_id);
--- ddl-end --
-
--- object: hashtags_uq | type: CONSTRAINT --
--- ALTER TABLE alpha_schema.hashtags DROP CONSTRAINT IF EXISTS hashtags_uq CASCADE;
-ALTER TABLE alpha_schema.hashtags ADD CONSTRAINT hashtags_uq UNIQUE (content);
--- ddl-end --
-
-
--- object: alpha_schema.many_posts_has_many_hashtags | type: TABLE --
--- DROP TABLE IF EXISTS alpha_schema.many_posts_has_many_hashtags CASCADE;
-CREATE TABLE alpha_schema.many_posts_has_many_hashtags (
-	post_id_posts uuid NOT NULL,
-	hashtag_id_hashtags uuid NOT NULL,
-	CONSTRAINT many_posts_has_many_hashtags_pk PRIMARY KEY (post_id_posts,hashtag_id_hashtags)
+-- object: alpha_schema.posts_and_hashtags | type: TABLE --
+-- DROP TABLE IF EXISTS alpha_schema.posts_and_hashtags CASCADE;
+CREATE TABLE alpha_schema.posts_and_hashtags (
+	post_id uuid NOT NULL,
+	hashtag_id uuid NOT NULL,
+	CONSTRAINT posts_and_hashtags_pk PRIMARY KEY (post_id,hashtag_id)
 );
 -- ddl-end --
 
 -- object: posts_fk | type: CONSTRAINT --
--- ALTER TABLE alpha_schema.many_posts_has_many_hashtags DROP CONSTRAINT IF EXISTS posts_fk CASCADE;
-ALTER TABLE alpha_schema.many_posts_has_many_hashtags ADD CONSTRAINT posts_fk FOREIGN KEY (post_id_posts)
+-- ALTER TABLE alpha_schema.posts_and_hashtags DROP CONSTRAINT IF EXISTS posts_fk CASCADE;
+ALTER TABLE alpha_schema.posts_and_hashtags ADD CONSTRAINT posts_fk FOREIGN KEY (post_id)
 REFERENCES alpha_schema.posts (post_id) MATCH FULL
 ON DELETE CASCADE ON UPDATE CASCADE;
 -- ddl-end --
 
 -- object: hashtags_fk | type: CONSTRAINT --
--- ALTER TABLE alpha_schema.many_posts_has_many_hashtags DROP CONSTRAINT IF EXISTS hashtags_fk CASCADE;
-ALTER TABLE alpha_schema.many_posts_has_many_hashtags ADD CONSTRAINT hashtags_fk FOREIGN KEY (hashtag_id_hashtags)
+-- ALTER TABLE alpha_schema.posts_and_hashtags DROP CONSTRAINT IF EXISTS hashtags_fk CASCADE;
+ALTER TABLE alpha_schema.posts_and_hashtags ADD CONSTRAINT hashtags_fk FOREIGN KEY (hashtag_id)
 REFERENCES alpha_schema.hashtags (hashtag_id) MATCH FULL
 ON DELETE CASCADE ON UPDATE CASCADE;
 -- ddl-end --
@@ -185,6 +153,25 @@ ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE alpha_schema.likes ADD CONSTRAINT posts_fk FOREIGN KEY (post_id)
 REFERENCES alpha_schema.posts (post_id) MATCH FULL
 ON DELETE CASCADE ON UPDATE CASCADE;
+-- ddl-end --
+
+-- object: subscriber_fk | type: CONSTRAINT --
+-- ALTER TABLE alpha_schema.subscriptions DROP CONSTRAINT IF EXISTS subscriber_fk CASCADE;
+ALTER TABLE alpha_schema.subscriptions ADD CONSTRAINT subscriber_fk FOREIGN KEY (subscriber_id)
+REFERENCES alpha_schema.users (user_id) MATCH FULL
+ON DELETE CASCADE ON UPDATE CASCADE;
+-- ddl-end --
+
+-- object: subscribee_fk | type: CONSTRAINT --
+-- ALTER TABLE alpha_schema.subscriptions DROP CONSTRAINT IF EXISTS subscribee_fk CASCADE;
+ALTER TABLE alpha_schema.subscriptions ADD CONSTRAINT subscribee_fk FOREIGN KEY (subscribee_id)
+REFERENCES alpha_schema.users (user_id) MATCH FULL
+ON DELETE CASCADE ON UPDATE CASCADE;
+-- ddl-end --
+
+-- object: subscriptions_uq | type: CONSTRAINT --
+-- ALTER TABLE alpha_schema.subscriptions DROP CONSTRAINT IF EXISTS subscriptions_uq CASCADE;
+ALTER TABLE alpha_schema.subscriptions ADD CONSTRAINT subscriptions_uq UNIQUE (subscriber_id,subscribee_id);
 -- ddl-end --
 
 

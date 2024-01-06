@@ -247,7 +247,7 @@ func (handler *UserHandler) ActivateUser(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Delete the token
-	queryString = "DELETE FROM alpha_schema.user_token WHERE token = $1"
+	queryString = "DELETE FROM alpha_schema.activation_tokens WHERE token = $1"
 	if _, err := tx.Exec(transactionCtx, queryString, activationRequest.Token); err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
@@ -434,7 +434,7 @@ func checkUsernameEmailTaken(ctx context.Context, w http.ResponseWriter, tx pgx.
 }
 
 func checkTokenValidity(ctx context.Context, w http.ResponseWriter, tx pgx.Tx, token, username string) error {
-	queryString := "SELECT expires_at FROM alpha_schema.user_token WHERE token = $1 AND user_id = (SELECT user_id FROM alpha_schema.users WHERE username = $2)"
+	queryString := "SELECT expires_at FROM alpha_schema.activation_tokens WHERE token = $1 AND user_id = (SELECT user_id FROM alpha_schema.users WHERE username = $2)"
 	rows, err := tx.Query(ctx, queryString, token, username)
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
@@ -490,13 +490,13 @@ func generateAndSendToken(w http.ResponseWriter, handler *UserHandler, tx pgx.Tx
 	tokenExpiresAt := time.Now().Add(2 * time.Hour)
 
 	// Delete the old token if it exists
-	queryString := "DELETE FROM alpha_schema.user_token WHERE user_id = $1"
+	queryString := "DELETE FROM alpha_schema.activation_tokens WHERE user_id = $1"
 	if _, err := tx.Exec(ctx, queryString, userId); err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return err
 	}
 
-	queryString = "INSERT INTO alpha_schema.user_token (token_id, user_id, token, expires_at) VALUES ($1, $2, $3, $4)"
+	queryString = "INSERT INTO alpha_schema.activation_tokens (token_id, user_id, token, expires_at) VALUES ($1, $2, $3, $4)"
 	if _, err := tx.Exec(ctx, queryString, tokenID, userId, token, tokenExpiresAt); err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return err
