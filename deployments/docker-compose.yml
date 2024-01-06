@@ -22,6 +22,7 @@ services:
 
   app:
     image: "${SERVER_IMAGE:-ghcr.io/wwi21seb-projekt/server-alpha:main}" # It's possible to specify the image to use in the environment, default is the latest image from the github container registry
+    user: ${UID}:${GID}
     depends_on:
       - db
     env_file:
@@ -33,10 +34,11 @@ services:
       - DB_NAME=${DB_NAME}
       - DB_USER=${DB_USER}
       - DB_PASS=${DB_PASS}
-      - JWT_PRIVATE_KEY=${JWT_PRIVATE_KEY}
-      - JWT_PUBLIC_KEY=${JWT_PUBLIC_KEY}
     ports:
       - "${APP_PORT}:8080"
+    volumes:
+      - ${PWD}/private_key.pem:/private_key.pem
+      - ${PWD}/public_key.pem:/public_key.pem
     healthcheck:
       test: "wget --no-verbose --tries=1 --spider http://app:8080/health || exit 1"
       interval: 10s

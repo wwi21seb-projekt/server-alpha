@@ -30,12 +30,24 @@ type JWTManager struct {
 }
 
 // NewJWTManager creates a new JWTManager with the initial key pair.
-func NewJWTManager() (JWTMgr, error) {
-	log.Info("Initializing JWT manager...")
+func NewJWTManager(privateKey ed25519.PrivateKey, publicKey ed25519.PublicKey) JWTMgr {
+	log.Info("Initializing JWT manager using provided key pair...")
+
+	JWTManager := JWTManager{
+		privateKey: privateKey,
+		publicKey:  publicKey,
+	}
+
+	log.Info("Initialized JWT manager using provided key pair")
+
+	return &JWTManager
+}
+
+func NewJWTManagerFromFile() (JWTMgr, error) {
+	log.Info("Initializing JWT manager using key pair from file...")
 	privateKeyPath := "private_key.pem"
 	publicKeyPath := "public_key.pem"
 
-	// Generate a new key pair if the private key does not exist
 	if _, err := os.Stat(privateKeyPath); os.IsNotExist(err) {
 		err := generateAndStoreKeys(privateKeyPath, publicKeyPath)
 		if err != nil {
@@ -43,52 +55,76 @@ func NewJWTManager() (JWTMgr, error) {
 		}
 	}
 
+	// Load key pem from file into memory
+	privateKeyPem, publicKeyPem, err := loadKeys(privateKeyPath, publicKeyPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Decode keys from pem format to ed25519 keys
+	privateKey, publicKey, err := decodeKeys(privateKeyPem, publicKeyPem)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Info("Initialized JWT manager using key pair from file")
+
+	return &JWTManager{
+		privateKey: privateKey,
+		publicKey:  publicKey,
+	}, nil
+}
+
+func loadKeys(privateKeyPath string, publicKeyPath string) ([]byte, []byte, error) {
+	log.Info("Loading key pair from file...")
 	// Read the private key from file
 	privateKeyBytes, err := os.ReadFile(privateKeyPath)
 	if err != nil {
 		log.Errorf("failed to read private key: %v", err)
-		return nil, err
-	}
-
-	// Decode the private key from PEM format
-	privateKeyBlock, _ := pem.Decode(privateKeyBytes)
-	if privateKeyBlock == nil {
-		return nil, fmt.Errorf("failed to decode private key block from PEM format")
-	}
-
-	// Parse the private key
-	privateKey, err := x509.ParsePKCS8PrivateKey(privateKeyBlock.Bytes)
-	if err != nil {
-		log.Errorf("failed to parse private key: %v", err)
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Read the public key from file
 	publicKeyBytes, err := os.ReadFile(publicKeyPath)
 	if err != nil {
 		log.Errorf("failed to read public key: %v", err)
-		return nil, err
+		return nil, nil, err
+	}
+
+	log.Info("Loaded key pair from file")
+	return privateKeyBytes, publicKeyBytes, nil
+}
+
+func decodeKeys(privateKeyPem []byte, publicKeyPem []byte) (ed25519.PrivateKey, ed25519.PublicKey, error) {
+	log.Info("Decoding key pair from PEM format...")
+	// Decode the private key from PEM format
+	privateKeyBlock, _ := pem.Decode(privateKeyPem)
+	if privateKeyBlock == nil {
+		return nil, nil, fmt.Errorf("failed to decode private key block from PEM format")
+	}
+
+	// Parse the private key
+	privateKeyAny, err := x509.ParsePKCS8PrivateKey(privateKeyBlock.Bytes)
+	if err != nil {
+		log.Errorf("failed to parse private key: %v", err)
+		return nil, nil, err
 	}
 
 	// Decode the public key from PEM format
-	publicKeyBlock, _ := pem.Decode(publicKeyBytes)
+	publicKeyBlock, _ := pem.Decode(publicKeyPem)
 	if publicKeyBlock == nil {
-		return nil, fmt.Errorf("failed to decode public key block from PEM format")
+		return nil, nil, fmt.Errorf("failed to decode public key block from PEM format")
 	}
 
 	// Parse the public key from the decoded PEM block
-	publicKey, err := x509.ParsePKIXPublicKey(publicKeyBlock.Bytes)
+	publicKeyAny, err := x509.ParsePKIXPublicKey(publicKeyBlock.Bytes)
 	if err != nil {
 		log.Errorf("failed to parse public key: %v", err)
-		return nil, err
+		return nil, nil, err
 	}
 
-	log.Info("Initialized JWT manager")
-
-	return &JWTManager{
-		privateKey: privateKey.(ed25519.PrivateKey),
-		publicKey:  publicKey.(ed25519.PublicKey),
-	}, nil
+	log.Info("Decoded key pair from PEM format")
+	return privateKeyAny.(ed25519.PrivateKey), publicKeyAny.(ed25519.PublicKey), nil
 }
 
 func generateAndStoreKeys(privateKeyPath string, publicKeyPath string) error {

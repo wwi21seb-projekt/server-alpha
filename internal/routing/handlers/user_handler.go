@@ -52,7 +52,7 @@ func (handler *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 	// Get username from path
 	username := chi.URLParam(r, "username")
 
-	queryString := "SELECT user_id, username, nickname, status, profile_picture_url FROM alpha_schema.users WHERE username = $1" //TODO: Add ProfilePictureURL & status
+	queryString := "SELECT user_id, username, nickname, status, profile_picture_url FROM alpha_schema.users WHERE username = $1"
 
 	rows, err := handler.DatabaseManager.GetPool().Query(ctx, queryString, username)
 	if err != nil {
@@ -99,7 +99,7 @@ func (handler *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 	claims := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
 	jwtUserId := claims["sub"].(string)
 
-	queryString = "SELECT subscription_id FROM alpha_schema.subscriptions WHERE subscriber_id = $1 AND subscribee_id $2"
+	queryString = "SELECT subscription_id FROM alpha_schema.subscriptions WHERE subscriber_id = $1 AND subscribee_id = $2"
 	row = handler.DatabaseManager.GetPool().QueryRow(ctx, queryString, jwtUserId, userId)
 	if err := row.Scan(&user.SubscriptionId); err != nil {
 		user.SubscriptionId = nil

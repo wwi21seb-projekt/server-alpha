@@ -44,7 +44,7 @@ func Init() {
 	mailMgr := managers.NewMailManager()
 
 	// Initialize JWT manager
-	jwtMgr, err := managers.NewJWTManager()
+	jwtMgr, err := managers.NewJWTManagerFromFile()
 	if err != nil {
 		panic(err)
 	}
