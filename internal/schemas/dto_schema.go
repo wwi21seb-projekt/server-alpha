@@ -118,3 +118,17 @@ type Pagination struct {
 	Limit   int `json:"limit"`
 	Records int `json:"records"`
 }
+
+// NicknameChangeRequest is a struct that represents a NicknameChange request
+// NewNickname is required and must be less than 25 characters
+type NicknameChangeRequest struct {
+	NewNickname string `json:"new_nickname" validate:"max=25"`
+}
+
+// PasswordChangeRequest is a struct that represents a PasswordChange request
+// OldPassword is required and must be at least 8 characters
+// NewPassword is required and must be at least 8 characters
+type PasswordChangeRequest struct {
+	OldPassword string `json:"old_password" validate:"required"`
+	NewPassword string `json:"new_password" validate:"required,min=8,password_validation"`
+}

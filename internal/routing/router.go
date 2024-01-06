@@ -1,14 +1,15 @@
 package routing
 
 import (
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 	"net/http"
 	"server-alpha/internal/managers"
 	"server-alpha/internal/routing/handlers"
 	"server-alpha/internal/schemas"
 	"server-alpha/internal/utils"
 	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 )
 
 func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtMgr managers.JWTMgr) *chi.Mux {
@@ -61,15 +62,7 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 	})
 
 	// Initialize user routes
-	r.Route("/api/v1/users", func(r chi.Router) {
-		r.Post("/", userHdl.RegisterUser)
-		r.Post("/login", userHdl.LoginUser)
-		r.Post("/{username}/activate", userHdl.ActivateUser)
-		r.Delete("/{username}/activate", userHdl.ResendToken)
-
-		r.With(jwtMgr.JWTMiddleware).Get("/{username}", userHdl.HandleGetUserRequest)
-		r.With(jwtMgr.JWTMiddleware).Get("/", userHdl.SearchUsers)
-	})
+	r.Route("/api/v1/users", userRouter(&databaseMgr, &jwtMgr, &mailMgr))
 
 	// Initialize post routes
 	r.Route("/api/v1/posts", func(r chi.Router) {
@@ -85,4 +78,17 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 	})
 
 	return r
+}
+
+func userRouter(databaseMgr *managers.DatabaseMgr, jwtMgr *managers.JWTMgr, mailMgr *managers.MailMgr) func(chi.Router) {
+	return func(r chi.Router) {
+		userHdl := handlers.NewUserHandler(databaseMgr, jwtMgr, mailMgr)
+
+		r.Post("/", userHdl.RegisterUser)
+		r.Post("/login", userHdl.LoginUser)
+		r.Post("/{username}/activate", userHdl.ActivateUser)
+		r.Delete("/{username}/activate", userHdl.ResendToken)
+		r.Patch("/{username}/nickname", userHdl.ChangeNickname)
+		r.Patch("/{username}/password", userHdl.ChangePassword)
+	}
 }
