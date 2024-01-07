@@ -44,7 +44,8 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 		r.Post("/{username}/activate", userHdl.ActivateUser)
 		r.Delete("/{username}/activate", userHdl.ResendToken)
 
-		r.With(jwtMgr.JWTMiddleware).Get("/{username}", userHdl.GetUser)
+		r.With(jwtMgr.JWTMiddleware).Get("/{username}", userHdl.HandleGetUserRequest)
+		r.With(jwtMgr.JWTMiddleware).Get("/", userHdl.SearchUsers)
 	})
 
 	// Initialize post routes

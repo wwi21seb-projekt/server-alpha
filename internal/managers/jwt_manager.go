@@ -75,7 +75,7 @@ func NewJWTManagerFromFile() (JWTMgr, error) {
 	}, nil
 }
 
-func loadKeys(privateKeyPath string, publicKeyPath string) ([]byte, []byte, error) {
+func loadKeys(privateKeyPath, publicKeyPath string) ([]byte, []byte, error) {
 	log.Info("Loading key pair from file...")
 	// Read the private key from file
 	privateKeyBytes, err := os.ReadFile(privateKeyPath)
@@ -95,7 +95,7 @@ func loadKeys(privateKeyPath string, publicKeyPath string) ([]byte, []byte, erro
 	return privateKeyBytes, publicKeyBytes, nil
 }
 
-func decodeKeys(privateKeyPem []byte, publicKeyPem []byte) (ed25519.PrivateKey, ed25519.PublicKey, error) {
+func decodeKeys(privateKeyPem, publicKeyPem []byte) (ed25519.PrivateKey, ed25519.PublicKey, error) {
 	log.Info("Decoding key pair from PEM format...")
 	// Decode the private key from PEM format
 	privateKeyBlock, _ := pem.Decode(privateKeyPem)
@@ -127,7 +127,7 @@ func decodeKeys(privateKeyPem []byte, publicKeyPem []byte) (ed25519.PrivateKey, 
 	return privateKeyAny.(ed25519.PrivateKey), publicKeyAny.(ed25519.PublicKey), nil
 }
 
-func generateAndStoreKeys(privateKeyPath string, publicKeyPath string) error {
+func generateAndStoreKeys(privateKeyPath, publicKeyPath string) error {
 	log.Info("Generating new key pair...")
 
 	// Generate a new key pair if the private key does not exist

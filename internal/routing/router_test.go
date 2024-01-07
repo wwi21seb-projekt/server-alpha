@@ -29,7 +29,7 @@ type User struct {
 func setupMocks(t *testing.T) (*mocks.MockDatabaseManager, managers.JWTMgr, *mocks.MockMailManager) {
 	poolMock, err := pgxmock.NewPool()
 	if err != nil {
-		log.Fatalf("Error creating mock database pool: %v", err)
+		log.Errorf("Error creating mock database pool: %v", err)
 	}
 
 	databaseMgrMock := &mocks.MockDatabaseManager{}
@@ -38,7 +38,7 @@ func setupMocks(t *testing.T) (*mocks.MockDatabaseManager, managers.JWTMgr, *moc
 	t.Setenv("ENVIRONMENT", "test")
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
-		log.Fatalf("Error generating key pair: %v", err)
+		log.Errorf("Error generating key pair: %v", err)
 	}
 	jwtMgr := managers.NewJWTManager(privateKey, publicKey)
 

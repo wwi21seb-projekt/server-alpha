@@ -27,9 +27,10 @@ type UserHdl interface {
 	ActivateUser(w http.ResponseWriter, r *http.Request)
 	ResendToken(w http.ResponseWriter, r *http.Request)
 	LoginUser(w http.ResponseWriter, r *http.Request)
-	GetUser(w http.ResponseWriter, r *http.Request)
+	HandleGetUserRequest(w http.ResponseWriter, r *http.Request)
 	Subscribe(w http.ResponseWriter, r *http.Request)
 	Unsubscribe(w http.ResponseWriter, r *http.Request)
+	SearchUsers(w http.ResponseWriter, r *http.Request)
 }
 
 type UserHandler struct {
@@ -443,7 +444,7 @@ func generateToken() string {
 	return strconv.Itoa(rand.Intn(900000) + 100000)
 }
 
-func (handler *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
+func (handler *UserHandler) HandleGetUserRequest(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithDeadline(r.Context(), time.Now().Add(500*time.Second))
 	defer func() {
 		if err := ctx.Err(); err != nil {
@@ -511,6 +512,7 @@ func (handler *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// Subscribe creates a new subscription between the current user and the username specified in the request body.
 func (handler *UserHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
 	// Begin a new transaction
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
@@ -605,7 +607,7 @@ func (handler *UserHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 }
 
-// Unsubscribe through subscriptionId
+// Unsubscribe removes a subscription between the current user and the user specified by the subscription ID.
 func (handler *UserHandler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 	// Begin a new transaction
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
@@ -652,4 +654,97 @@ func (handler *UserHandler) Unsubscribe(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// SearchUsers returns a list of users that match the search query using query parameters using offset and limit.
+func (handler *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithDeadline(r.Context(), time.Now().Add(10*time.Second))
+	defer func() {
+		if err := ctx.Err(); err != nil {
+			log.Debug("Context error: ", err)
+		}
+		cancel()
+		log.Debug("Context canceled")
+	}()
+
+	// Get the search query from the query parameters
+	searchQuery := r.URL.Query().Get("username")
+
+	// Get the offset from the query parameters
+	offsetString := r.URL.Query().Get("offset")
+	if offsetString == "" {
+		offsetString = "0"
+	}
+	offset, err := strconv.Atoi(offsetString)
+	if err != nil {
+		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("offset invalid"))
+		return
+	}
+
+	// Get the limit from the query parameters
+	limitString := r.URL.Query().Get("limit")
+	if limitString == "" {
+		limitString = "10"
+	}
+	limit, err := strconv.Atoi(limitString)
+	if err != nil {
+		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("limit invalid"))
+		return
+	}
+
+	// Get the length of all users that match the search query
+	queryString := "SELECT COUNT(*) FROM alpha_schema.users"
+	row := handler.DatabaseManager.GetPool().QueryRow(ctx, queryString)
+	var records int
+	if err := row.Scan(&records); err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Check if the offset is valid
+	if offset > records {
+		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("offset greater than records"))
+		return
+	}
+
+	// Get the users that match the search query
+	queryString = "SELECT username, nickname, profile_picture_url, levenshtein(username, $1) as ld FROM alpha_schema.users ORDER BY ld LIMIT $2 OFFSET $3"
+	rows, err := handler.DatabaseManager.GetPool().Query(ctx, queryString, searchQuery, limit, offset)
+	if err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+	defer rows.Close()
+
+	// Create a list of users
+	users := make([]schemas.UserSearchDTO, 0)
+
+	for rows.Next() {
+		user := schemas.UserSearchDTO{}
+		if err := rows.Scan(&user.Username, &user.Nickname, &user.ProfilePictureURL, &user.LevenshteinDistance); err != nil {
+			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+			return
+		}
+		users = append(users, user)
+	}
+
+	// Create Pagination DTO
+	paginationDto := schemas.Pagination{
+		Offset:  offset,
+		Limit:   limit,
+		Records: records,
+	}
+
+	// Create Paginated Response
+	paginatedResponse := schemas.PaginatedResponse{
+		Records:    users,
+		Pagination: paginationDto,
+	}
+
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(paginatedResponse); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		utils.WriteAndLogError(w, schemas.InternalServerError, http.StatusInternalServerError, err)
+		return
+	}
 }

@@ -29,6 +29,10 @@ CREATE SCHEMA alpha_schema;
 ALTER SCHEMA alpha_schema OWNER TO alpha;
 -- ddl-end --
 
+-- Appended SQL commands --
+CREATE EXTENSION fuzzystrmatch;
+-- ddl-end --
+
 SET search_path TO pg_catalog,public,alpha_schema;
 -- ddl-end --
 
@@ -88,8 +92,6 @@ CREATE TABLE alpha_schema.subscriptions (
 	CONSTRAINT subscriptions_pk PRIMARY KEY (subscription_id)
 );
 -- ddl-end --
-COMMENT ON COLUMN alpha_schema.subscriptions.subscription_id IS E'TODO: Besprechen ob man das überhaupt braucht';
--- ddl-end --
 
 -- object: users_fk | type: CONSTRAINT --
 -- ALTER TABLE alpha_schema.posts DROP CONSTRAINT IF EXISTS users_fk CASCADE;
@@ -101,32 +103,52 @@ ON DELETE CASCADE ON UPDATE CASCADE;
 -- object: alpha_schema.hashtags | type: TABLE --
 -- DROP TABLE IF EXISTS alpha_schema.hashtags CASCADE;
 CREATE TABLE alpha_schema.hashtags (
-	hashtag_id uuid NOT NULL,
-	content varchar(32) NOT NULL,
-	CONSTRAINT hashtags_pk PRIMARY KEY (hashtag_id),
-	CONSTRAINT hashtags_uq UNIQUE (content)
 );
 -- ddl-end --
 
--- object: alpha_schema.posts_and_hashtags | type: TABLE --
--- DROP TABLE IF EXISTS alpha_schema.posts_and_hashtags CASCADE;
-CREATE TABLE alpha_schema.posts_and_hashtags (
-	post_id uuid NOT NULL,
-	hashtag_id uuid NOT NULL,
-	CONSTRAINT posts_and_hashtags_pk PRIMARY KEY (post_id,hashtag_id)
+-- object: hashtag_id | type: COLUMN --
+-- ALTER TABLE alpha_schema.hashtags DROP COLUMN IF EXISTS hashtag_id CASCADE;
+ALTER TABLE alpha_schema.hashtags ADD COLUMN hashtag_id uuid NOT NULL;
+-- ddl-end --
+
+
+-- object: content | type: COLUMN --
+-- ALTER TABLE alpha_schema.hashtags DROP COLUMN IF EXISTS content CASCADE;
+ALTER TABLE alpha_schema.hashtags ADD COLUMN content varchar(32) NOT NULL;
+-- ddl-end --
+
+
+
+-- object: hashtags_pk | type: CONSTRAINT --
+-- ALTER TABLE alpha_schema.hashtags DROP CONSTRAINT IF EXISTS hashtags_pk CASCADE;
+ALTER TABLE alpha_schema.hashtags ADD CONSTRAINT hashtags_pk PRIMARY KEY (hashtag_id);
+-- ddl-end --
+
+-- object: hashtags_uq | type: CONSTRAINT --
+-- ALTER TABLE alpha_schema.hashtags DROP CONSTRAINT IF EXISTS hashtags_uq CASCADE;
+ALTER TABLE alpha_schema.hashtags ADD CONSTRAINT hashtags_uq UNIQUE (content);
+-- ddl-end --
+
+
+-- object: alpha_schema.many_posts_has_many_hashtags | type: TABLE --
+-- DROP TABLE IF EXISTS alpha_schema.many_posts_has_many_hashtags CASCADE;
+CREATE TABLE alpha_schema.many_posts_has_many_hashtags (
+	post_id_posts uuid NOT NULL,
+	hashtag_id_hashtags uuid NOT NULL,
+	CONSTRAINT many_posts_has_many_hashtags_pk PRIMARY KEY (post_id_posts,hashtag_id_hashtags)
 );
 -- ddl-end --
 
 -- object: posts_fk | type: CONSTRAINT --
--- ALTER TABLE alpha_schema.posts_and_hashtags DROP CONSTRAINT IF EXISTS posts_fk CASCADE;
-ALTER TABLE alpha_schema.posts_and_hashtags ADD CONSTRAINT posts_fk FOREIGN KEY (post_id)
+-- ALTER TABLE alpha_schema.many_posts_has_many_hashtags DROP CONSTRAINT IF EXISTS posts_fk CASCADE;
+ALTER TABLE alpha_schema.many_posts_has_many_hashtags ADD CONSTRAINT posts_fk FOREIGN KEY (post_id_posts)
 REFERENCES alpha_schema.posts (post_id) MATCH FULL
 ON DELETE CASCADE ON UPDATE CASCADE;
 -- ddl-end --
 
 -- object: hashtags_fk | type: CONSTRAINT --
--- ALTER TABLE alpha_schema.posts_and_hashtags DROP CONSTRAINT IF EXISTS hashtags_fk CASCADE;
-ALTER TABLE alpha_schema.posts_and_hashtags ADD CONSTRAINT hashtags_fk FOREIGN KEY (hashtag_id)
+-- ALTER TABLE alpha_schema.many_posts_has_many_hashtags DROP CONSTRAINT IF EXISTS hashtags_fk CASCADE;
+ALTER TABLE alpha_schema.many_posts_has_many_hashtags ADD CONSTRAINT hashtags_fk FOREIGN KEY (hashtag_id_hashtags)
 REFERENCES alpha_schema.hashtags (hashtag_id) MATCH FULL
 ON DELETE CASCADE ON UPDATE CASCADE;
 -- ddl-end --
