@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"math/rand"
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -25,6 +26,8 @@ type UserHdl interface {
 	ActivateUser(w http.ResponseWriter, r *http.Request)
 	ResendToken(w http.ResponseWriter, r *http.Request)
 	LoginUser(w http.ResponseWriter, r *http.Request)
+	ChangeNickname(w http.ResponseWriter, r *http.Request)
+	ChangePassword(w http.ResponseWriter, r *http.Request)
 }
 
 type UserHandler struct {
@@ -216,6 +219,123 @@ func (handler *UserHandler) ResendToken(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (handler *UserHandler) ChangeNickname(w http.ResponseWriter, r *http.Request) {
+	// Begin a new transaction
+	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
+	if tx == nil || transactionCtx == nil {
+		return
+	}
+	var err error
+	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel, err)
+
+	// Decode the request body into the nickname change request struct
+	nicknameChangeRequest := &schemas.NicknameChangeRequest{}
+	if err := utils.DecodeRequestBody(w, r, nicknameChangeRequest); err != nil {
+		return
+	}
+
+	// Get username from path
+	username := chi.URLParam(r, "username")
+
+	// Validate the nickname change request struct using the validator
+	if err := utils.ValidateStruct(w, nicknameChangeRequest); err != nil {
+		return
+	}
+
+	// Get the user ID
+	_, userID, errorOccurred := retrieveUserIdAndEmail(transactionCtx, w, tx, username)
+	if errorOccurred {
+		return
+	}
+
+	// Change the user's nickname
+	queryString := "UPDATE alpha_schema.users SET nickname = $1 WHERE user_id = $2"
+	if _, err := tx.Exec(transactionCtx, queryString, nicknameChangeRequest.NewNickname, userID); err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Retrieve the updated user
+	userDto := &schemas.UserDTO{}
+	queryString = "SELECT username, nickname, email FROM alpha_schema.users WHERE user_id = $1"
+	if err := tx.QueryRow(transactionCtx, queryString, userID).Scan(&userDto.Username, &userDto.Nickname, &userDto.Email); err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+
+	if err := utils.CommitTransaction(w, tx, transactionCtx, cancel); err != nil {
+		return
+	}
+
+	// Send the updated user in the response
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(userDto); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+}
+
+func (handler *UserHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	// Begin a new transaction
+	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
+	if tx == nil || transactionCtx == nil {
+		return
+	}
+	var err error
+	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel, err)
+
+	// Decode the request body into the password change request struct
+	passwordChangeRequest := &schemas.PasswordChangeRequest{}
+	if err = utils.DecodeRequestBody(w, r, passwordChangeRequest); err != nil {
+		return
+	}
+
+	// Get username from path
+	username := chi.URLParam(r, "username")
+
+	// Validate the password change request struct using the validator
+	if err = utils.ValidateStruct(w, passwordChangeRequest); err != nil {
+		return
+	}
+
+	// Get the user ID
+	_, userID, errorOccurred := retrieveUserIdAndEmail(transactionCtx, w, tx, username)
+	if errorOccurred {
+		return
+	}
+
+	//Check if old password is correct
+	if err = checkPassword(w, transactionCtx, tx, username, passwordChangeRequest.OldPassword); err != nil {
+		return
+	}
+
+	// Hash the new password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(passwordChangeRequest.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		utils.WriteAndLogError(w, schemas.InternalServerError, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Update the user's password in the database
+	queryString := "UPDATE alpha_schema.users SET password = $1 WHERE user_id = $2"
+	if _, err = tx.Exec(transactionCtx, queryString, hashedPassword, userID); err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Commit the transaction
+	if err = utils.CommitTransaction(w, tx, transactionCtx, cancel); err != nil {
+		return
+	}
+
+	// Send success response
+	w.WriteHeader(http.StatusOK)
+	if err = json.NewEncoder(w).Encode(map[string]string{"message": "Password updated successfully"}); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+}
+
 func (handler *UserHandler) LoginUser(w http.ResponseWriter, r *http.Request) {
 	// Begin a new transaction
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
@@ -252,26 +372,14 @@ func (handler *UserHandler) LoginUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if password matches
-	queryString := "SELECT password, user_id FROM alpha_schema.users WHERE username = $1"
-	rows, err := tx.Query(transactionCtx, queryString, loginRequest.Username)
-	if err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-		return
-	}
-	defer rows.Close()
-
-	var password string
-	var userId uuid.UUID
-	rows.Next() // We already asserted existence earlier, so we can assume that the row exists
-
-	if err := rows.Scan(&password, &userId); err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+	//Check if password is correct
+	if err = checkPassword(w, transactionCtx, tx, loginRequest.Username, loginRequest.Password); err != nil {
 		return
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(password), []byte(loginRequest.Password)); err != nil {
-		utils.WriteAndLogError(w, schemas.InvalidCredentials, http.StatusInternalServerError, err)
+	// Get the user ID
+	_, userId, errorOccurred := retrieveUserIdAndEmail(transactionCtx, w, tx, loginRequest.Username)
+	if errorOccurred {
 		return
 	}
 
@@ -436,4 +544,29 @@ func generateToken() string {
 
 	// Generate a random 6-digit number
 	return strconv.Itoa(rand.Intn(900000) + 100000)
+}
+
+func checkPassword(w http.ResponseWriter, transactionCtx context.Context, tx pgx.Tx, username string, givenPassword string) error {
+	queryString := "SELECT password, user_id FROM alpha_schema.users WHERE username = $1"
+	rows, err := tx.Query(transactionCtx, queryString, username)
+	if err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return err
+	}
+	defer rows.Close()
+
+	var password string
+	var userId uuid.UUID
+	rows.Next() // We already asserted existence earlier, so we can assume that the row exists
+
+	if err := rows.Scan(&password, &userId); err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return err
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(password), []byte(givenPassword)); err != nil {
+		utils.WriteAndLogError(w, schemas.InvalidCredentials, http.StatusInternalServerError, err)
+		return err
+	}
+	return nil
 }

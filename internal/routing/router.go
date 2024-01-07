@@ -1,12 +1,13 @@
 package routing
 
 import (
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 	"net/http"
 	"server-alpha/internal/managers"
 	"server-alpha/internal/routing/handlers"
 	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 )
 
 func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtMgr managers.JWTMgr) *chi.Mux {
@@ -54,5 +55,7 @@ func userRouter(databaseMgr *managers.DatabaseMgr, jwtMgr *managers.JWTMgr, mail
 		r.Post("/login", userHdl.LoginUser)
 		r.Post("/{username}/activate", userHdl.ActivateUser)
 		r.Delete("/{username}/activate", userHdl.ResendToken)
+		r.Post("/{username}/nickname", userHdl.ChangeNickname)
+		r.Post("/{username}/password", userHdl.ChangePassword)
 	}
 }
