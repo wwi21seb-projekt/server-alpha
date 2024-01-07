@@ -261,23 +261,15 @@ func (handler *UserHandler) ChangeNickname(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Retrieve the updated user
-	user := &schemas.User{}
+	userDto := &schemas.UserDTO{}
 	queryString = "SELECT username, nickname, email FROM alpha_schema.users WHERE user_id = $1"
-	if err := tx.QueryRow(transactionCtx, queryString, userID).Scan(&user.Username, &user.Nickname, &user.Email); err != nil {
+	if err := tx.QueryRow(transactionCtx, queryString, userID).Scan(&userDto.Username, &userDto.Nickname, &userDto.Email); err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
 	if err := utils.CommitTransaction(w, tx, transactionCtx, cancel); err != nil {
 		return
-	}
-
-	// Send success response
-	w.WriteHeader(http.StatusCreated)
-	userDto := &schemas.UserDTO{
-		Username: user.Username,
-		Nickname: user.Nickname,
-		Email:    user.Email,
 	}
 
 	// Send the updated user in the response
