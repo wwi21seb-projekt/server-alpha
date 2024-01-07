@@ -1,0 +1,16 @@
+# Scripts owned by Luca (@930C)
+/scripts/* @930C
+
+# GitHub related files owned by Kevin (@Frecherenkel60)
+.github/* @Frecherenkel60
+
+# Deployments and Build owned by Luca (@930C) and Keivn (@Frecherenkel60)
+/deployments/* @930C @Frecherenkel60
+/build/* @930C @Frecherenkel60
+
+# Everything else owned by project team (@wwi21seb-projekt/server-alpha)
+/api/* @wwi21seb-projekt/server-alpha
+/cmd/* @wwi21seb-projekt/server-alpha
+/configs/* @wwi21seb-projekt/server-alpha
+/docs/* @wwi21seb-projekt/server-alpha
+/internal/* @wwi21seb-projekt/server-alpha
