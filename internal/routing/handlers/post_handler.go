@@ -47,7 +47,7 @@ func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get the user ID from the JWT token
-	claims := r.Context().Value("claims").(jwt.MapClaims)
+	claims := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
 
 	// Create the post
 	userId := claims["sub"].(string)

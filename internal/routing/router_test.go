@@ -2,7 +2,7 @@ package routing
 
 import (
 	"crypto/ed25519"
-	"encoding/pem"
+	"crypto/rand"
 	"github.com/gavv/httpexpect/v2"
 	"github.com/google/uuid"
 	"github.com/pashagolub/pgxmock/v3"
@@ -11,10 +11,8 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"server-alpha/internal/managers"
 	"server-alpha/internal/managers/mocks"
-	"strings"
 	"testing"
 )
 
@@ -28,48 +26,21 @@ type User struct {
 	Email          string `json:"email"`
 }
 
-func setupMocks() (*mocks.MockDatabaseManager, managers.JWTMgr, *mocks.MockMailManager) {
+func setupMocks(t *testing.T) (*mocks.MockDatabaseManager, managers.JWTMgr, *mocks.MockMailManager) {
 	poolMock, err := pgxmock.NewPool()
 	if err != nil {
-		panic(err)
+		log.Errorf("Error creating mock database pool: %v", err)
 	}
 
 	databaseMgrMock := &mocks.MockDatabaseManager{}
 	databaseMgrMock.On("GetPool").Return(poolMock)
 
-	publicKey, privateKey, err := ed25519.GenerateKey(nil)
+	t.Setenv("ENVIRONMENT", "test")
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
-		log.Fatalf("Failed to generate ed25519 keys: %v", err)
+		log.Errorf("Error generating key pair: %v", err)
 	}
-
-	privateBlock := &pem.Block{
-		Type:  "PRIVATE KEY",
-		Bytes: privateKey,
-	}
-
-	publicBlock := &pem.Block{
-		Type:  "PUBLIC KEY",
-		Bytes: publicKey,
-	}
-
-	privateKeyPem := string(pem.EncodeToMemory(privateBlock))
-	publicKeyPem := string(pem.EncodeToMemory(publicBlock))
-
-	privateKeyPem = strings.Replace(privateKeyPem, "-----BEGIN PRIVATE KEY-----\n", "", 1)
-	privateKeyPem = strings.Replace(privateKeyPem, "\n-----END PRIVATE KEY-----", "", 1)
-	privateKeyPem = strings.TrimSpace(privateKeyPem)
-
-	publicKeyPem = strings.Replace(publicKeyPem, "-----BEGIN PUBLIC KEY-----\n", "", 1)
-	publicKeyPem = strings.Replace(publicKeyPem, "\n-----END PUBLIC KEY-----", "", 1)
-	publicKeyPem = strings.TrimSpace(publicKeyPem)
-
-	_ = os.Setenv("JWT_PRIVATE_KEY", privateKeyPem)
-	_ = os.Setenv("JWT_PUBLIC_KEY", publicKeyPem)
-
-	jwtMgr, err := managers.NewJWTManager()
-	if err != nil {
-		panic(err)
-	}
+	jwtMgr := managers.NewJWTManager(privateKey, publicKey)
 
 	mailMgrMock := &mocks.MockMailManager{}
 	mailMgrMock.On("SendActivationMail", mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.Anything, mock.Anything).Return(nil)
@@ -149,7 +120,7 @@ func TestUserRegistration(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 
-			databaseMgrMock, jwtManagerMock, mailMgrMock := setupMocks()
+			databaseMgrMock, jwtManagerMock, mailMgrMock := setupMocks(t)
 
 			router := InitRouter(databaseMgrMock, mailMgrMock, jwtManagerMock)
 
@@ -167,7 +138,7 @@ func TestUserRegistration(t *testing.T) {
 				poolMock.ExpectQuery("SELECT").WithArgs(tc.user.Username, tc.user.Email).WillReturnRows(pgxmock.NewRows([]string{"username", "email"}).AddRow(tc.user.Username, tc.user.Email))
 			default:
 				poolMock.ExpectQuery("SELECT").WithArgs(tc.user.Username, tc.user.Email).WillReturnRows(pgxmock.NewRows([]string{"username", "email"}))
-				poolMock.ExpectExec("INSERT").WithArgs(pgxmock.AnyArg(), tc.user.Username, tc.user.Nickname, tc.user.Email, pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg()).WillReturnResult(pgxmock.NewResult("INSERT", 1))
+				poolMock.ExpectExec("INSERT").WithArgs(pgxmock.AnyArg(), tc.user.Username, tc.user.Nickname, tc.user.Email, pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), "", "").WillReturnResult(pgxmock.NewResult("INSERT", 1))
 				poolMock.ExpectExec("DELETE").WithArgs(pgxmock.AnyArg()).WillReturnResult(pgxmock.NewResult("DELETE", 0))
 				poolMock.ExpectExec("INSERT").WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg()).WillReturnResult(pgxmock.NewResult("INSERT", 1))
 				poolMock.ExpectCommit()
@@ -220,7 +191,7 @@ func TestUserLogin(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			databaseMgrMock, jwtManagerMock, mailMgrMock := setupMocks()
+			databaseMgrMock, jwtManagerMock, mailMgrMock := setupMocks(t)
 
 			router := InitRouter(databaseMgrMock, mailMgrMock, jwtManagerMock)
 

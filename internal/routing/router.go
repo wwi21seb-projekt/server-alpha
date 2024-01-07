@@ -16,11 +16,14 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(15000 * time.Second))
+	r.Use(middleware.Timeout(15 * time.Second))
 	r.Use(middleware.SetHeader("Content-Type", "application/json"))
 
 	// Initialize handlers
 	postHdl := handlers.NewPostHandler(&databaseMgr)
+
+	// Initialize user handlers
+	userHdl := handlers.NewUserHandler(&databaseMgr, &jwtMgr, &mailMgr)
 
 	// Initialize health check route
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -35,7 +38,15 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 	})
 
 	// Initialize user routes
-	r.Route("/api/v1/users", userRouter(&databaseMgr, &jwtMgr, &mailMgr))
+	r.Route("/api/v1/users", func(r chi.Router) {
+		r.Post("/", userHdl.RegisterUser)
+		r.Post("/login", userHdl.LoginUser)
+		r.Post("/{username}/activate", userHdl.ActivateUser)
+		r.Delete("/{username}/activate", userHdl.ResendToken)
+
+		r.With(jwtMgr.JWTMiddleware).Get("/{username}", userHdl.HandleGetUserRequest)
+		r.With(jwtMgr.JWTMiddleware).Get("/", userHdl.SearchUsers)
+	})
 
 	// Initialize post routes
 	r.Route("/api/v1/posts", func(r chi.Router) {
@@ -43,16 +54,12 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 		r.Post("/", postHdl.CreatePost)
 	})
 
+	// Intialize subscription routes
+	r.Route("/api/v1/subscriptions", func(r chi.Router) {
+		r.Use(jwtMgr.JWTMiddleware)
+		r.Post("/", userHdl.Subscribe)
+		r.Delete("/{subscriptionId}", userHdl.Unsubscribe)
+	})
+
 	return r
-}
-
-func userRouter(databaseMgr *managers.DatabaseMgr, jwtMgr *managers.JWTMgr, mailMgr *managers.MailMgr) func(chi.Router) {
-	return func(r chi.Router) {
-		userHdl := handlers.NewUserHandler(databaseMgr, jwtMgr, mailMgr)
-
-		r.Post("/", userHdl.RegisterUser)
-		r.Post("/login", userHdl.LoginUser)
-		r.Post("/{username}/activate", userHdl.ActivateUser)
-		r.Delete("/{username}/activate", userHdl.ResendToken)
-	}
 }

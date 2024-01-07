@@ -12,11 +12,6 @@ generate_password() {
   tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 32 | head -n 1
 }
 
-# Function for formatting key
-format_key() {
-  cat "$1" | tr -d '\n' | sed -e 's/-----BEGIN \w* KEY-----//' -e 's/-----END \w* KEY-----//'
-}
-
 # Remove the .env file if it exists
 if [[ -e .env ]]; then
   rm .env
@@ -36,15 +31,10 @@ fi
 if [[ ! -e private_key.pem ]]; then
   openssl genpkey -algorithm ed25519 -out private_key.pem
 fi
-echo -n "JWT_PRIVATE_KEY=" >> .env
-format_key private_key.pem >> .env
-echo >> .env
 
 if [[ ! -e public_key.pem ]]; then
   openssl pkey -in private_key.pem -pubout -out public_key.pem
 fi
-echo -n "JWT_PUBLIC_KEY=" >> .env
-format_key public_key.pem >> .env
 
 print_message "32" "Environment variables are written to .env file:"
-grep -v -e "DB_PASS" -e "JWT_PRIVATE_KEY" -e "JWT_PUBLIC_KEY" < .env
+grep -v -e "DB_PASS" < .env
