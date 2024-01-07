@@ -548,32 +548,22 @@ func (handler *UserHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
 	claims := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
 	jwtUserId := claims["sub"].(string)
 
-	// Check if the user is subscribed to the user he wants to subscribe to
+	// Check and throw error if the user is already subscribed to the user he wants to subscribe to
+	queryString = "SELECT subscription_id FROM alpha_schema.subscriptions WHERE subscriber_id = $1 AND subscribee_id = $2"
+	rows := tx.QueryRow(transactionCtx, queryString, jwtUserId, subscribeeId)
 	var subscriptionId uuid.UUID
-
-	exists, err := checkSubscriptionExistence(transactionCtx, w, tx, jwtUserId, subscribeeId)
-	if err != nil {
-		return
-	}
-
-	if exists {
-		utils.WriteAndLogError(w, schemas.SubscriptionAlreadyExists, http.StatusConflict, errors.New("subscription already exists"))
-		return
-	}
-
-	subscriptionId = uuid.New()
-	createdAt := time.Now()
-
-	// Subscribe the user
-	queryString = "INSERT INTO alpha_schema.subscriptions (subscription_id, subscriber_id, subscribee_id, created_at) VALUES ($1, $2, $3, $4)"
-	if _, err := tx.Exec(transactionCtx, queryString, subscriptionId, jwtUserId, subscribeeId, createdAt); err != nil {
-		log.Errorf("error while inserting subscription: %v", err)
+	if err := rows.Scan(&subscriptionId); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
-	// Commit the transaction
-	if err := utils.CommitTransaction(w, tx, transactionCtx, cancel); err != nil {
+	// Subscribe the user
+	queryString = "INSERT INTO alpha_schema.subscriptions (subscription_id, subscriber_id, subscribee_id, created_at) VALUES ($1, $2, $3, $4)"
+	subscriptionId = uuid.New()
+	createdAt := time.Now()
+	if _, err := tx.Exec(transactionCtx, queryString, subscriptionId, jwtUserId, subscribeeId, createdAt); err != nil {
+		log.Errorf("error while inserting subscription: %v", err)
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -603,6 +593,11 @@ func (handler *UserHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewEncoder(w).Encode(subscriptionDto); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	// Commit the transaction
+	if err := utils.CommitTransaction(w, tx, transactionCtx, cancel); err != nil {
 		return
 	}
 
@@ -655,21 +650,6 @@ func (handler *UserHandler) Unsubscribe(w http.ResponseWriter, r *http.Request) 
 	if err := utils.CommitTransaction(w, tx, transactionCtx, cancel); err != nil {
 		return
 	}
+
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func checkSubscriptionExistence(ctx context.Context, w http.ResponseWriter, tx pgx.Tx, subscriberId, subscribeeId string) (bool, error) {
-	queryString := "SELECT subscription_id FROM alpha_schema.subscriptions WHERE subscriber_id = $1 AND subscribee_id = $2"
-	rows := tx.QueryRow(ctx, queryString, subscriberId, subscribeeId)
-	var subscriptionId string
-	if err := rows.Scan(&subscriptionId); err != nil {
-		// If error is not pgx.ErrNoRows, return error
-		if errors.Is(err, pgx.ErrNoRows) {
-			return false, nil
-		}
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-		return false, err
-	}
-
-	return true, nil
 }
