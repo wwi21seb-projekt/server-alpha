@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/go-chi/chi/v5"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -13,7 +14,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 
@@ -28,6 +28,8 @@ type UserHdl interface {
 	ResendToken(w http.ResponseWriter, r *http.Request)
 	LoginUser(w http.ResponseWriter, r *http.Request)
 	GetUser(w http.ResponseWriter, r *http.Request)
+	Subscribe(w http.ResponseWriter, r *http.Request)
+	Unsubscribe(w http.ResponseWriter, r *http.Request)
 }
 
 type UserHandler struct {
@@ -35,83 +37,6 @@ type UserHandler struct {
 	JWTManager      managers.JWTMgr
 	MailManager     managers.MailMgr
 	Validator       *utils.Validator
-}
-
-func (handler *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithDeadline(r.Context(), time.Now().Add(500*time.Second))
-	defer func() {
-		if err := ctx.Err(); err != nil {
-			log.Debug("Context error: ", err)
-		}
-		cancel()
-		log.Debug("Context canceled")
-	}()
-
-	user := schemas.UserProfileDTO{}
-
-	// Get username from path
-	username := chi.URLParam(r, "username")
-
-	queryString := "SELECT user_id, username, nickname, status, profile_picture_url FROM alpha_schema.users WHERE username = $1"
-
-	rows, err := handler.DatabaseManager.GetPool().Query(ctx, queryString, username)
-	if err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-		return
-	}
-	defer rows.Close()
-
-	var userId uuid.UUID
-
-	if rows.Next() {
-		if err := rows.Scan(&userId, &user.Username, &user.Nickname, &user.Status, &user.ProfilePicture); err != nil {
-			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-			return
-		}
-	} else {
-		utils.WriteAndLogError(w, schemas.UserNotFound, http.StatusNotFound, errors.New("user not found"))
-		return
-	}
-
-	queryString = "SELECT COUNT(*) FROM alpha_schema.posts WHERE author_id = $1"
-
-	row := handler.DatabaseManager.GetPool().QueryRow(ctx, queryString, userId)
-	if err := row.Scan(&user.Posts); err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-		return
-	}
-
-	queryString = "SELECT COUNT(*) FROM alpha_schema.subscriptions WHERE subscribee_id = $1"
-	row = handler.DatabaseManager.GetPool().QueryRow(ctx, queryString, userId)
-	if err := row.Scan(&user.Follower); err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-		return
-	}
-
-	queryString = "SELECT COUNT(*) FROM alpha_schema.subscriptions WHERE subscriber_id = $1"
-	row = handler.DatabaseManager.GetPool().QueryRow(ctx, queryString, userId)
-	if err := row.Scan(&user.Following); err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-		return
-	}
-
-	// Get the user ID from the JWT token
-	claims := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
-	jwtUserId := claims["sub"].(string)
-
-	queryString = "SELECT subscription_id FROM alpha_schema.subscriptions WHERE subscriber_id = $1 AND subscribee_id = $2"
-	row = handler.DatabaseManager.GetPool().QueryRow(ctx, queryString, jwtUserId, userId)
-	if err := row.Scan(&user.SubscriptionId); err != nil {
-		user.SubscriptionId = nil
-	}
-
-	// Send success response
-	w.WriteHeader(http.StatusOK)
-
-	if err = json.NewEncoder(w).Encode(user); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
 }
 
 func NewUserHandler(databaseManager *managers.DatabaseMgr, jwtManager *managers.JWTMgr, mailManager *managers.MailMgr) UserHdl {
@@ -516,4 +441,235 @@ func generateToken() string {
 
 	// Generate a random 6-digit number
 	return strconv.Itoa(rand.Intn(900000) + 100000)
+}
+
+func (handler *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithDeadline(r.Context(), time.Now().Add(500*time.Second))
+	defer func() {
+		if err := ctx.Err(); err != nil {
+			log.Debug("Context error: ", err)
+		}
+		cancel()
+		log.Debug("Context canceled")
+	}()
+
+	user := schemas.UserProfileDTO{}
+	var userId uuid.UUID
+
+	// Get username from path
+	username := chi.URLParam(r, "username")
+
+	queryString := "SELECT user_id, username, nickname, status, profile_picture_url FROM alpha_schema.users WHERE username = $1"
+
+	row := handler.DatabaseManager.GetPool().QueryRow(ctx, queryString, username)
+	if err := row.Scan(&userId, &user.Username, &user.Nickname, &user.Status, &user.ProfilePicture); err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Get the number of posts the user has
+	queryString = "SELECT COUNT(*) FROM alpha_schema.posts WHERE author_id = $1"
+	row = handler.DatabaseManager.GetPool().QueryRow(ctx, queryString, userId)
+	if err := row.Scan(&user.Posts); err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Get the number of followers the user has
+	queryString = "SELECT COUNT(*) FROM alpha_schema.subscriptions WHERE subscribee_id = $1"
+	row = handler.DatabaseManager.GetPool().QueryRow(ctx, queryString, userId)
+	if err := row.Scan(&user.Follower); err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Get the number of users the user is following
+	queryString = "SELECT COUNT(*) FROM alpha_schema.subscriptions WHERE subscriber_id = $1"
+	row = handler.DatabaseManager.GetPool().QueryRow(ctx, queryString, userId)
+	if err := row.Scan(&user.Following); err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Get the user ID from the JWT token
+	claims := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
+	jwtUserId := claims["sub"].(string)
+
+	// Get the subscription ID
+	queryString = "SELECT subscription_id FROM alpha_schema.subscriptions WHERE subscriber_id = $1 AND subscribee_id = $2"
+	row = handler.DatabaseManager.GetPool().QueryRow(ctx, queryString, jwtUserId, userId)
+	if err := row.Scan(&user.SubscriptionId); err != nil {
+		user.SubscriptionId = nil
+	}
+
+	// Send success response
+	w.WriteHeader(http.StatusOK)
+
+	if err := json.NewEncoder(w).Encode(user); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+}
+
+func (handler *UserHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
+	// Begin a new transaction
+	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
+	if tx == nil || transactionCtx == nil {
+		return
+	}
+	var err error
+	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel, err)
+
+	// Decode the request body into the subscription request struct
+	subscriptionRequest := &schemas.SubscriptionRequest{}
+	if err := utils.DecodeRequestBody(w, r, subscriptionRequest); err != nil {
+		return
+	}
+
+	// Validate the subscription request struct using the validator
+	if err := utils.ValidateStruct(w, subscriptionRequest); err != nil {
+		return
+	}
+
+	// Get subscribeeId from request body
+	queryString := "SELECT user_id FROM alpha_schema.users WHERE username = $1"
+	row := tx.QueryRow(transactionCtx, queryString, subscriptionRequest.Following)
+	var subscribeeId string
+	if err := row.Scan(&subscribeeId); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			utils.WriteAndLogError(w, schemas.UserNotFound, http.StatusNotFound, err)
+			return
+		}
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Get the user ID from the JWT token
+	claims := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
+	jwtUserId := claims["sub"].(string)
+
+	// Check if the user is subscribed to the user he wants to subscribe to
+	var subscriptionId uuid.UUID
+
+	exists, err := checkSubscriptionExistence(transactionCtx, w, tx, jwtUserId, subscribeeId)
+	if err != nil {
+		return
+	}
+
+	if exists {
+		utils.WriteAndLogError(w, schemas.SubscriptionAlreadyExists, http.StatusConflict, errors.New("subscription already exists"))
+		return
+	}
+
+	subscriptionId = uuid.New()
+	createdAt := time.Now()
+
+	// Subscribe the user
+	queryString = "INSERT INTO alpha_schema.subscriptions (subscription_id, subscriber_id, subscribee_id, created_at) VALUES ($1, $2, $3, $4)"
+	if _, err := tx.Exec(transactionCtx, queryString, subscriptionId, jwtUserId, subscribeeId, createdAt); err != nil {
+		log.Errorf("error while inserting subscription: %v", err)
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Commit the transaction
+	if err := utils.CommitTransaction(w, tx, transactionCtx, cancel); err != nil {
+		return
+	}
+
+	// Get the usernames of the users
+	queryString = "SELECT username FROM alpha_schema.users WHERE user_id = $1"
+	row = tx.QueryRow(transactionCtx, queryString, jwtUserId)
+	var sourceUsername string
+	if err := row.Scan(&sourceUsername); err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+
+	row = tx.QueryRow(transactionCtx, queryString, subscribeeId)
+	var targetUsername string
+	if err := row.Scan(&targetUsername); err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Send the subscription to the user
+	subscriptionDto := &schemas.SubscriptionDTO{
+		SubscriptionId:   subscriptionId,
+		SubscriptionDate: createdAt.String(),
+		Following:        targetUsername,
+		Follower:         sourceUsername,
+	}
+
+	if err := json.NewEncoder(w).Encode(subscriptionDto); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	// Send success response
+	w.WriteHeader(http.StatusCreated)
+}
+
+// Unsubscribe through subscriptionId
+func (handler *UserHandler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
+	// Begin a new transaction
+	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
+	if tx == nil || transactionCtx == nil {
+		return
+	}
+	var err error
+	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel, err)
+
+	// Get the user ID from the JWT token
+	claims := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
+	jwtUserId := claims["sub"].(string)
+
+	// Get subscriptionId from path
+	subscriptionId := chi.URLParam(r, "subscriptionId")
+
+	// Get the subscribeeId from the subscriptionId
+	queryString := "SELECT subscribee_id FROM alpha_schema.subscriptions WHERE subscription_id = $1"
+	row := tx.QueryRow(transactionCtx, queryString, subscriptionId)
+	var subscribeeId string
+	if err := row.Scan(&subscribeeId); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			utils.WriteAndLogError(w, schemas.SubscriptionNotFound, http.StatusNotFound, errors.New("subscription not found"))
+			return
+		}
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Unsubscribe the user
+	queryString = "DELETE FROM alpha_schema.subscriptions WHERE subscriber_id = $1 AND subscribee_id = $2"
+	if _, err := tx.Exec(transactionCtx, queryString, jwtUserId, subscribeeId); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			utils.WriteAndLogError(w, schemas.SubscriptionNotFound, http.StatusNotFound, errors.New("subscription not found"))
+			return
+		}
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Commit the transaction
+	if err := utils.CommitTransaction(w, tx, transactionCtx, cancel); err != nil {
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func checkSubscriptionExistence(ctx context.Context, w http.ResponseWriter, tx pgx.Tx, subscriberId, subscribeeId string) (bool, error) {
+	queryString := "SELECT subscription_id FROM alpha_schema.subscriptions WHERE subscriber_id = $1 AND subscribee_id = $2"
+	rows := tx.QueryRow(ctx, queryString, subscriberId, subscribeeId)
+	var subscriptionId string
+	if err := rows.Scan(&subscriptionId); err != nil {
+		// If error is not pgx.ErrNoRows, return error
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return false, err
+	}
+
+	return true, nil
 }

@@ -90,3 +90,14 @@ type UserProfileDTO struct {
 	Posts          int        `json:"posts"`
 	SubscriptionId *uuid.UUID `json:"subscriptionId"`
 }
+
+type SubscriptionRequest struct {
+	Following string `json:"following" validate:"required,max=20,username_validation"` // TODO: Lieber "username" als "following"
+}
+
+type SubscriptionDTO struct {
+	SubscriptionId   uuid.UUID `json:"subscriptionId"`
+	SubscriptionDate string    `json:"subscriptionDate"`
+	Following        string    `json:"following"`
+	Follower         string    `json:"follower"`
+}
