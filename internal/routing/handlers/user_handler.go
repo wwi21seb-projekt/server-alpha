@@ -309,6 +309,11 @@ func (handler *UserHandler) ChangePassword(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	//Check if old password is correct
+	if err = checkPassword(w, transactionCtx, tx, username, passwordChangeRequest.OldPassword); err != nil {
+		return
+	}
+
 	// Hash the new password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(passwordChangeRequest.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
@@ -372,26 +377,14 @@ func (handler *UserHandler) LoginUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if password matches
-	queryString := "SELECT password, user_id FROM alpha_schema.users WHERE username = $1"
-	rows, err := tx.Query(transactionCtx, queryString, loginRequest.Username)
-	if err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-		return
-	}
-	defer rows.Close()
-
-	var password string
-	var userId uuid.UUID
-	rows.Next() // We already asserted existence earlier, so we can assume that the row exists
-
-	if err := rows.Scan(&password, &userId); err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+	//Check if password is correct
+	if err = checkPassword(w, transactionCtx, tx, loginRequest.Username, loginRequest.Password); err != nil {
 		return
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(password), []byte(loginRequest.Password)); err != nil {
-		utils.WriteAndLogError(w, schemas.InvalidCredentials, http.StatusInternalServerError, err)
+	// Get the user ID
+	_, userId, errorOccurred := retrieveUserIdAndEmail(transactionCtx, w, tx, loginRequest.Username)
+	if errorOccurred {
 		return
 	}
 
@@ -848,4 +841,29 @@ func (handler *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) 
 		utils.WriteAndLogError(w, schemas.InternalServerError, http.StatusInternalServerError, err)
 		return
 	}
+}
+
+func checkPassword(w http.ResponseWriter, transactionCtx context.Context, tx pgx.Tx, username string, givenPassword string) error {
+	queryString := "SELECT password, user_id FROM alpha_schema.users WHERE username = $1"
+	rows, err := tx.Query(transactionCtx, queryString, username)
+	if err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return err
+	}
+	defer rows.Close()
+
+	var password string
+	var userId uuid.UUID
+	rows.Next() // We already asserted existence earlier, so we can assume that the row exists
+
+	if err := rows.Scan(&password, &userId); err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return err
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(password), []byte(givenPassword)); err != nil {
+		utils.WriteAndLogError(w, schemas.InvalidCredentials, http.StatusInternalServerError, err)
+		return err
+	}
+	return nil
 }

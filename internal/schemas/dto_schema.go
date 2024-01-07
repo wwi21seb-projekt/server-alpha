@@ -129,6 +129,6 @@ type NicknameChangeRequest struct {
 // OldPassword is required and must be at least 8 characters
 // NewPassword is required and must be at least 8 characters
 type PasswordChangeRequest struct {
-	OldPassword string `json:"old_password" validate:"required"`
+	OldPassword string `json:"old_password" validate:"required,min=8,password_validation"`
 	NewPassword string `json:"new_password" validate:"required,min=8,password_validation"`
 }
