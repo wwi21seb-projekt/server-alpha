@@ -13,7 +13,7 @@ import (
 
 func BeginTransaction(w http.ResponseWriter, r *http.Request, pool interfaces.PgxPoolIface) (pgx.Tx, context.Context, context.CancelFunc) {
 	// Begin a new transaction
-	transactionCtx, cancel := context.WithDeadline(r.Context(), time.Now().Add(500*time.Second))
+	transactionCtx, cancel := context.WithDeadline(r.Context(), time.Now().Add(10*time.Second))
 
 	tx, err := pool.Begin(transactionCtx)
 	if err != nil {

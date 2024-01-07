@@ -139,7 +139,7 @@ func (handler *UserHandler) ActivateUser(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Get username from path
-	username := chi.URLParam(r, "username")
+	username := chi.URLParam(r, utils.UsernameKey)
 
 	// Validate the activation request struct using the validator
 	if err := utils.ValidateStruct(w, activationRequest); err != nil {
@@ -195,7 +195,7 @@ func (handler *UserHandler) ResendToken(w http.ResponseWriter, r *http.Request) 
 	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel, err)
 
 	// Get username from path
-	username := chi.URLParam(r, "username")
+	username := chi.URLParam(r, utils.UsernameKey)
 
 	email, userId, errorOccurred := retrieveUserIdAndEmail(transactionCtx, w, tx, username)
 	if errorOccurred {
@@ -445,7 +445,7 @@ func generateToken() string {
 }
 
 func (handler *UserHandler) HandleGetUserRequest(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithDeadline(r.Context(), time.Now().Add(500*time.Second))
+	ctx, cancel := context.WithDeadline(r.Context(), time.Now().Add(10*time.Second))
 	defer func() {
 		if err := ctx.Err(); err != nil {
 			log.Debug("Context error: ", err)
@@ -458,7 +458,7 @@ func (handler *UserHandler) HandleGetUserRequest(w http.ResponseWriter, r *http.
 	var userId uuid.UUID
 
 	// Get username from path
-	username := chi.URLParam(r, "username")
+	username := chi.URLParam(r, utils.UsernameKey)
 
 	queryString := "SELECT user_id, username, nickname, status, profile_picture_url FROM alpha_schema.users WHERE username = $1"
 
@@ -549,6 +549,7 @@ func (handler *UserHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
 	// Get the user ID from the JWT token
 	claims := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
 	jwtUserId := claims["sub"].(string)
+	jwtUsername := claims["username"].(string)
 
 	// Check and throw error if the user is already subscribed to the user he wants to subscribe to
 	queryString = "SELECT subscription_id FROM alpha_schema.subscriptions WHERE subscriber_id = $1 AND subscribee_id = $2"
@@ -569,28 +570,12 @@ func (handler *UserHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get the usernames of the users
-	queryString = "SELECT username FROM alpha_schema.users WHERE user_id = $1"
-	row = tx.QueryRow(transactionCtx, queryString, jwtUserId)
-	var sourceUsername string
-	if err := row.Scan(&sourceUsername); err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-		return
-	}
-
-	row = tx.QueryRow(transactionCtx, queryString, subscribeeId)
-	var targetUsername string
-	if err := row.Scan(&targetUsername); err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-		return
-	}
-
 	// Send the subscription to the user
 	subscriptionDto := &schemas.SubscriptionDTO{
 		SubscriptionId:   subscriptionId,
 		SubscriptionDate: createdAt.String(),
-		Following:        targetUsername,
-		Follower:         sourceUsername,
+		Following:        subscriptionRequest.Following,
+		Follower:         jwtUsername,
 	}
 
 	if err := json.NewEncoder(w).Encode(subscriptionDto); err != nil {
@@ -622,7 +607,7 @@ func (handler *UserHandler) Unsubscribe(w http.ResponseWriter, r *http.Request) 
 	jwtUserId := claims["sub"].(string)
 
 	// Get subscriptionId from path
-	subscriptionId := chi.URLParam(r, "subscriptionId")
+	subscriptionId := chi.URLParam(r, utils.SubscriptionIdKey)
 
 	// Get the subscribeeId from the subscriptionId
 	queryString := "SELECT subscribee_id FROM alpha_schema.subscriptions WHERE subscription_id = $1"
@@ -668,10 +653,10 @@ func (handler *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) 
 	}()
 
 	// Get the search query from the query parameters
-	searchQuery := r.URL.Query().Get("username")
+	searchQuery := r.URL.Query().Get(utils.UsernameParamKey)
 
 	// Get the offset from the query parameters
-	offsetString := r.URL.Query().Get("offset")
+	offsetString := r.URL.Query().Get(utils.OffsetParamKey)
 	if offsetString == "" {
 		offsetString = "0"
 	}
@@ -682,7 +667,7 @@ func (handler *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Get the limit from the query parameters
-	limitString := r.URL.Query().Get("limit")
+	limitString := r.URL.Query().Get(utils.LimitParamKey)
 	if limitString == "" {
 		limitString = "10"
 	}
@@ -717,7 +702,7 @@ func (handler *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) 
 	defer rows.Close()
 
 	// Create a list of users
-	users := make([]schemas.UserSearchDTO, 0)
+	users := make([]schemas.UserSearchDTO, 0, limit)
 
 	for rows.Next() {
 		user := schemas.UserSearchDTO{}

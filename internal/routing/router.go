@@ -16,7 +16,7 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(15000 * time.Second))
+	r.Use(middleware.Timeout(15 * time.Second))
 	r.Use(middleware.SetHeader("Content-Type", "application/json"))
 
 	// Initialize handlers
