@@ -4,6 +4,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"net/http"
+	"regexp"
 	"server-alpha/internal/managers"
 	"server-alpha/internal/schemas"
 	"server-alpha/internal/utils"
@@ -18,6 +19,8 @@ type PostHandler struct {
 	DatabaseManager managers.DatabaseMgr
 	Validator       *utils.Validator
 }
+
+var hashtagRegex = regexp.MustCompile(`#\w+`)
 
 func NewPostHandler(databaseManager *managers.DatabaseMgr) PostHdl {
 	return &PostHandler{
@@ -59,6 +62,26 @@ func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
+	}
+
+	// Get the hashtags
+	hashtags := hashtagRegex.FindAllString(createPostRequest.Content, -1)
+
+	// Create the hashtags
+	for _, hashtag := range hashtags {
+		hashtagId := uuid.New()
+
+		queryString = "INSERT INTO alpha_schema.hashtags (hashtag_id, content) VALUES($1, $2) ON CONFLICT DO NOTHING"
+		if _, err = tx.Exec(transactionCtx, queryString, hashtagId, hashtag); err != nil {
+			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+			return
+		}
+
+		queryString = "INSERT INTO alpha_schema.many_posts_has_many_hashtags (post_id_posts, hashtag_id_hashtags) VALUES($1, $2)"
+		if _, err = tx.Exec(transactionCtx, queryString, postId, hashtagId); err != nil {
+			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+			return
+		}
 	}
 
 	// Get the author

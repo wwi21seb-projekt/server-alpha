@@ -8,6 +8,12 @@ type ErrorDTO struct {
 	Error CustomError `json:"error"`
 }
 
+// ImprintDTO is a struct that represents an imprint response
+// Text is the imprint text
+type ImprintDTO struct {
+	Text string `json:"text"`
+}
+
 // UserDTO is a struct that represents a user response
 // Username is the username of the user
 // Nickname is the nickname of the user

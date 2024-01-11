@@ -195,5 +195,3 @@ ON DELETE CASCADE ON UPDATE CASCADE;
 -- ALTER TABLE alpha_schema.subscriptions DROP CONSTRAINT IF EXISTS subscriptions_uq CASCADE;
 ALTER TABLE alpha_schema.subscriptions ADD CONSTRAINT subscriptions_uq UNIQUE (subscriber_id,subscribee_id);
 -- ddl-end --
-
-
