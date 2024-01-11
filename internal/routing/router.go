@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"server-alpha/internal/managers"
 	"server-alpha/internal/routing/handlers"
+	"server-alpha/internal/schemas"
+	"server-alpha/internal/utils"
 	"time"
 )
 
@@ -35,6 +37,27 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 		}
 		defer conn.Release()
 		w.WriteHeader(http.StatusOK)
+	})
+
+	r.Get("/imprint", func(w http.ResponseWriter, r *http.Request) {
+		imprint := "Impressum\n\nEinen Löwen interessiert es nicht, was Schafe über ihn denken.\n\nDiese Webseite " +
+			"wird im Rahmen eines Universitätsprojektes angeboten von:\nKurs WWI21SEB\nDuale Hochschule " +
+			"Baden-Württemberg Mannheim\nCoblitzallee 1 – 9, 68163 Mannheim\n\nKontakt:\nE-Mail: " +
+			"team@mail.server-alpha.tech\n\nHaftungsausschluss:\nDer Kurs WWI21SEB und die DHBW Mannheim übernehmen " +
+			"keine Haftung für die Inhalte externer Links. Für den Inhalt der verlinkten Seiten sind ausschließlich " +
+			"deren Betreiber verantwortlich.\n\nDatenschutzbeauftragter der Hochschule:\nProf. Dr. Tobias Straub\n" +
+			"Friedrichstraße 14\n70174 Stuttgart\nE-Mail: straub@dhbw.de\n\nDie Nutzung von auf dieser Website " +
+			"veröffentlichten Kontaktdaten durch Dritte zur Übersendung von nicht ausdrücklich angeforderter Werbung " +
+			"und Informationsmaterialien wird hiermit ausdrücklich untersagt. Die Betreiber der Seiten behalten sich " +
+			"ausdrücklich rechtliche Schritte im Falle der unverlangten Zusendung von Werbeinformationen, etwa durch " +
+			"Spam-Mails, vor.\n\nDiese Webseite wurde im Rahmen eines Universitätsprojekts erstellt und dient " +
+			"ausschließlich zu nicht-kommerziellen Zwecken."
+
+		imprintDto := &schemas.ImprintDTO{
+			Text: imprint,
+		}
+
+		utils.WriteAndLogResponse(w, imprintDto, http.StatusOK)
 	})
 
 	// Initialize user routes
