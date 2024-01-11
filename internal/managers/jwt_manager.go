@@ -3,9 +3,12 @@ package managers
 import (
 	"context"
 	"crypto/ed25519"
-	"encoding/base64"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"github.com/golang-jwt/jwt/v5"
+	log "github.com/sirupsen/logrus"
 	"net/http"
 	"os"
 	"server-alpha/internal/schemas"
@@ -27,39 +30,174 @@ type JWTManager struct {
 }
 
 // NewJWTManager creates a new JWTManager with the initial key pair.
-func NewJWTManager() (JWTMgr, error) {
-	privateKey, err := parsePrivateKey(os.Getenv("JWT_PRIVATE_KEY"))
+func NewJWTManager(privateKey ed25519.PrivateKey, publicKey ed25519.PublicKey) JWTMgr {
+	log.Info("Initializing JWT manager using provided key pair...")
+
+	JWTManager := JWTManager{
+		privateKey: privateKey,
+		publicKey:  publicKey,
+	}
+
+	log.Info("Initialized JWT manager using provided key pair")
+
+	return &JWTManager
+}
+
+func NewJWTManagerFromFile() (JWTMgr, error) {
+	log.Info("Initializing JWT manager using key pair from file...")
+	privateKeyPath := "private_key.pem"
+	publicKeyPath := "public_key.pem"
+
+	if _, err := os.Stat(privateKeyPath); os.IsNotExist(err) {
+		err := generateAndStoreKeys(privateKeyPath, publicKeyPath)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Load key pem from file into memory
+	privateKeyPem, publicKeyPem, err := loadKeys(privateKeyPath, publicKeyPath)
 	if err != nil {
 		return nil, err
 	}
-	publicKey, err := parsePublicKey(os.Getenv("JWT_PUBLIC_KEY"))
+
+	// Decode keys from pem format to ed25519 keys
+	privateKey, publicKey, err := decodeKeys(privateKeyPem, publicKeyPem)
 	if err != nil {
 		return nil, err
 	}
+
+	log.Info("Initialized JWT manager using key pair from file")
+
 	return &JWTManager{
 		privateKey: privateKey,
 		publicKey:  publicKey,
 	}, nil
 }
 
-// parsePrivateKey parses a PEM formatted private key.
-func parsePrivateKey(privateKeyBase64 string) (ed25519.PrivateKey, error) {
-	privateKeyBytes, err := base64.StdEncoding.DecodeString(privateKeyBase64)
+func loadKeys(privateKeyPath, publicKeyPath string) ([]byte, []byte, error) {
+	log.Info("Loading key pair from file...")
+	// Read the private key from file
+	privateKeyBytes, err := os.ReadFile(privateKeyPath)
 	if err != nil {
-		return nil, err
+		log.Errorf("failed to read private key: %v", err)
+		return nil, nil, err
 	}
 
-	return privateKeyBytes, nil
+	// Read the public key from file
+	publicKeyBytes, err := os.ReadFile(publicKeyPath)
+	if err != nil {
+		log.Errorf("failed to read public key: %v", err)
+		return nil, nil, err
+	}
+
+	log.Info("Loaded key pair from file")
+	return privateKeyBytes, publicKeyBytes, nil
 }
 
-// parsePublicKey parses a PEM formatted public key.
-func parsePublicKey(publicKeyBase64 string) (ed25519.PublicKey, error) {
-	publicKeyBytes, err := base64.StdEncoding.DecodeString(publicKeyBase64)
-	if err != nil {
-		return nil, err
+func decodeKeys(privateKeyPem, publicKeyPem []byte) (ed25519.PrivateKey, ed25519.PublicKey, error) {
+	log.Info("Decoding key pair from PEM format...")
+	// Decode the private key from PEM format
+	privateKeyBlock, _ := pem.Decode(privateKeyPem)
+	if privateKeyBlock == nil {
+		return nil, nil, fmt.Errorf("failed to decode private key block from PEM format")
 	}
 
-	return publicKeyBytes, nil
+	// Parse the private key
+	privateKeyAny, err := x509.ParsePKCS8PrivateKey(privateKeyBlock.Bytes)
+	if err != nil {
+		log.Errorf("failed to parse private key: %v", err)
+		return nil, nil, err
+	}
+
+	// Decode the public key from PEM format
+	publicKeyBlock, _ := pem.Decode(publicKeyPem)
+	if publicKeyBlock == nil {
+		return nil, nil, fmt.Errorf("failed to decode public key block from PEM format")
+	}
+
+	// Parse the public key from the decoded PEM block
+	publicKeyAny, err := x509.ParsePKIXPublicKey(publicKeyBlock.Bytes)
+	if err != nil {
+		log.Errorf("failed to parse public key: %v", err)
+		return nil, nil, err
+	}
+
+	log.Info("Decoded key pair from PEM format")
+	return privateKeyAny.(ed25519.PrivateKey), publicKeyAny.(ed25519.PublicKey), nil
+}
+
+func generateAndStoreKeys(privateKeyPath, publicKeyPath string) error {
+	log.Info("Generating new key pair...")
+
+	// Generate a new key pair if the private key does not exist
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		log.Errorf("failed to generate key pair: %v", err)
+		return err
+	}
+
+	// Save the private key
+	privateKeyBytes, err := x509.MarshalPKCS8PrivateKey(privateKey)
+	if err != nil {
+		log.Errorf("failed to marshal private key: %v", err)
+		return err
+	}
+
+	privateBlock := &pem.Block{
+		Type:  "PRIVATE KEY",
+		Bytes: privateKeyBytes,
+	}
+
+	privateKeyFile, err := os.Create(privateKeyPath)
+	if err != nil {
+		log.Errorf("failed to create private key file: %v", err)
+		return err
+	}
+	defer func(privateKeyFile *os.File) {
+		err := privateKeyFile.Close()
+		if err != nil {
+			log.Errorf("failed to close private key file: %v", err)
+		}
+	}(privateKeyFile)
+
+	err = pem.Encode(privateKeyFile, privateBlock)
+	if err != nil {
+		log.Errorf("failed to encode private key: %v", err)
+		return err
+	}
+
+	publicKeyBytes, err := x509.MarshalPKIXPublicKey(publicKey)
+	if err != nil {
+		log.Errorf("failed to marshal public key: %v", err)
+		return err
+	}
+
+	publicBlock := &pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: publicKeyBytes,
+	}
+
+	publicKeyFile, err := os.Create(publicKeyPath)
+	if err != nil {
+		log.Errorf("failed to create public key file: %v", err)
+		return err
+	}
+
+	defer func(publicKeyFile *os.File) {
+		err := publicKeyFile.Close()
+		if err != nil {
+			log.Errorf("failed to close public key file: %v", err)
+		}
+	}(publicKeyFile)
+
+	err = pem.Encode(publicKeyFile, publicBlock)
+	if err != nil {
+		log.Errorf("failed to encode public key: %v", err)
+		return err
+	}
+	log.Info("Generated new key pair")
+	return nil
 }
 
 // GenerateClaims generates the standard JWT claims.
@@ -102,9 +240,13 @@ func (jm *JWTManager) ValidateJWT(tokenString string) (jwt.Claims, error) {
 }
 
 func (jm *JWTManager) JWTMiddleware(next http.Handler) http.Handler {
-	type claimsKey string
-
 	fn := func(w http.ResponseWriter, r *http.Request) {
+		// Check if the request has a JWT token
+		if r.Header.Get("Authorization") == "" {
+			utils.WriteAndLogError(w, schemas.Unauthorized, http.StatusUnauthorized, fmt.Errorf("missing authorization header"))
+			return
+		}
+
 		// Extract the JWT token from the request header
 		header := r.Header.Get("Authorization")
 		token := header[len("Bearer "):]
@@ -118,7 +260,7 @@ func (jm *JWTManager) JWTMiddleware(next http.Handler) http.Handler {
 
 		// Add the claims to the request context
 		ctx := r.Context()
-		ctx = context.WithValue(ctx, claimsKey("claims"), claims)
+		ctx = context.WithValue(ctx, utils.ClaimsKey, claims)
 		r = r.WithContext(ctx)
 
 		next.ServeHTTP(w, r)

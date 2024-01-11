@@ -1,0 +1,271 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+CAUTION: Do not modify this file unless you know what you are doing.
+ Unexpected results may occur if the code is changed deliberately.
+-->
+<dbmodel pgmodeler-ver="1.1.0-beta1" use-changelog="false" last-position="0,0" last-zoom="1" max-obj-count="8"
+	 default-schema="alpha_schema"
+	 layers="Default layer"
+	 active-layers="0"
+	 layer-name-colors="#000000"
+	 layer-rect-colors="#b4b4b4"
+	 show-layer-names="false" show-layer-rects="false">
+<role name="alpha"
+ createdb="true"
+ createrole="true"
+ login="true"
+ sql-disabled="true">
+</role>
+
+<database name="server_alpha_db" encoding="UTF8" is-template="false" allow-conns="true" sql-disabled="true">
+</database>
+
+<schema name="public" layers="0" fill-color="#e1e1e1" name-color="#000000" sql-disabled="true">
+</schema>
+
+<schema name="alpha_schema" layers="0" rect-visible="true" fill-color="#e1e1e1" name-color="#31363b">
+	<role name="alpha"/>
+	<appended-sql> <![CDATA[CREATE EXTENSION fuzzystrmatch;]]> </appended-sql>
+</schema>
+
+<table name="users" layers="0" collapse-mode="2" max-obj-count="12" z-value="0">
+	<schema name="alpha_schema"/>
+	<position x="960" y="320"/>
+	<column name="user_id" not-null="true">
+		<type name="uuid" length="0"/>
+	</column>
+	<column name="username" not-null="true">
+		<type name="varchar" length="25"/>
+	</column>
+	<column name="nickname" not-null="true">
+		<type name="varchar" length="20"/>
+	</column>
+	<column name="email" not-null="true">
+		<type name="varchar" length="128"/>
+	</column>
+	<column name="password" not-null="true">
+		<type name="char" length="60"/>
+	</column>
+	<column name="status" not-null="true">
+		<type name="varchar" length="256"/>
+	</column>
+	<column name="profile_picture_url" not-null="true">
+		<type name="varchar" length="256"/>
+	</column>
+	<column name="created_at" not-null="true">
+		<type name="timestamptz" length="0"/>
+	</column>
+	<column name="activated_at">
+		<type name="timestamptz" length="0"/>
+	</column>
+	<column name="expires_at">
+		<type name="timestamptz" length="0"/>
+	</column>
+	<constraint name="user_id_pk" type="pk-constr" table="alpha_schema.users">
+		<columns names="user_id" ref-type="src-columns"/>
+	</constraint>
+</table>
+
+<table name="activation_tokens" layers="0" collapse-mode="2" max-obj-count="4" z-value="0">
+	<schema name="alpha_schema"/>
+	<position x="480" y="240"/>
+	<column name="token_id" not-null="true">
+		<type name="uuid" length="0"/>
+	</column>
+	<column name="token" not-null="true">
+		<type name="varchar" length="6"/>
+	</column>
+	<column name="expires_at">
+		<type name="timestamptz" length="0"/>
+	</column>
+	<constraint name="tokens_pk" type="pk-constr" table="alpha_schema.activation_tokens">
+		<columns names="token_id" ref-type="src-columns"/>
+	</constraint>
+
+	<customidxs object-type="column">
+		<object name="user_id" index="3"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="users_fk" index="1"/>
+	</customidxs></table>
+
+<relationship name="users_has_many_user_token" type="rel1n" layers="0"
+	 src-col-pattern="{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#c7a5d2"
+	 src-table="alpha_schema.users"
+	 dst-table="alpha_schema.activation_tokens"
+	 src-required="true" dst-required="false"
+	del-action="CASCADE">
+	<label ref-type="src-label">
+		<position x="0" y="0"/>
+	</label>
+	<label ref-type="dst-label">
+		<position x="0" y="0"/>
+	</label>
+	<label ref-type="name-label">
+		<position x="-9.34237" y="-3.09099"/>
+	</label>
+</relationship>
+
+<table name="posts" layers="0" collapse-mode="2" max-obj-count="4" z-value="0">
+	<schema name="alpha_schema"/>
+	<position x="1700" y="440"/>
+	<column name="post_id" not-null="true">
+		<type name="uuid" length="0"/>
+	</column>
+	<column name="content">
+		<type name="varchar" length="256"/>
+	</column>
+	<column name="created_at" not-null="true">
+		<type name="timestamptz" length="0"/>
+	</column>
+	<constraint name="posts_pk" type="pk-constr" table="alpha_schema.posts">
+		<columns names="post_id" ref-type="src-columns"/>
+	</constraint>
+
+	<customidxs object-type="column">
+		<object name="author_id" index="3"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="users_fk" index="1"/>
+	</customidxs></table>
+
+<table name="subscriptions" layers="0" collapse-mode="2" max-obj-count="4" z-value="0">
+	<schema name="alpha_schema"/>
+	<position x="480" y="440"/>
+	<column name="subscription_id" not-null="true">
+		<type name="uuid" length="0"/>
+	</column>
+	<column name="created_at" not-null="true">
+		<type name="timestamptz" length="0"/>
+	</column>
+	<constraint name="subscriptions_pk" type="pk-constr" table="alpha_schema.subscriptions">
+		<columns names="subscription_id" ref-type="src-columns"/>
+	</constraint>
+
+	<customidxs object-type="column">
+		<object name="subscribee_id" index="3"/>
+		<object name="subscriber_id" index="2"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="subscribee_fk" index="2"/>
+		<object name="subscriber_fk" index="1"/>
+	</customidxs></table>
+
+<relationship name="users_has_many_posts" type="rel1n" layers="0"
+	 src-col-pattern="author_id"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#28e6c0"
+	 src-table="alpha_schema.users"
+	 dst-table="alpha_schema.posts"
+	 src-required="true" dst-required="false"
+	upd-action="CASCADE"
+	del-action="CASCADE">
+	<label ref-type="name-label">
+		<position x="2.15763" y="-3.09099"/>
+	</label>
+</relationship>
+
+<table name="hashtags" layers="0" gen-alter-cmds="true" collapse-mode="2" max-obj-count="2" z-value="0">
+	<schema name="alpha_schema"/>
+	<position x="1500" y="180"/>
+	<column name="hashtag_id" not-null="true">
+		<type name="uuid" length="0"/>
+	</column>
+	<column name="content" not-null="true">
+		<type name="varchar" length="32"/>
+	</column>
+<constraint name="hashtags_pk" type="pk-constr" alias="hashtags_pk" table="alpha_schema.hashtags">
+	<columns names="hashtag_id" ref-type="src-columns"/>
+</constraint>
+
+<constraint name="hashtags_uq" type="uq-constr" table="alpha_schema.hashtags">
+	<columns names="content" ref-type="src-columns"/>
+</constraint>
+
+</table>
+
+<relationship name="post_and_hashtag" type="relnn" layers="0"
+	 src-col-pattern="{sc}_{st}" dst-col-pattern="{sc}_{dt}"
+	 pk-pattern="{gt}_pk" uq-pattern="{gt}_uq"
+	 src-fk-pattern="{st}_fk" dst-fk-pattern="{dt}_fk"
+	 pk-col-pattern="id"
+	 custom-color="#a5de51"
+	 src-table="alpha_schema.posts"
+	 dst-table="alpha_schema.hashtags"
+	 src-required="false" dst-required="false"
+	 table-name="many_posts_has_many_hashtags"
+	upd-action="CASCADE"
+	del-action="CASCADE"/>
+
+<table name="likes" layers="0" collapse-mode="2" max-obj-count="3" z-value="0">
+	<schema name="alpha_schema"/>
+	<position x="1340" y="640"/>
+	<column name="liked_at" not-null="true">
+		<type name="timestamptz" length="0"/>
+	</column>
+
+	<customidxs object-type="column">
+		<object name="post_id" index="1"/>
+		<object name="user_id" index="0"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="likes_pk" index="0"/>
+		<object name="posts_fk" index="2"/>
+		<object name="users_fk" index="1"/>
+	</customidxs></table>
+
+<relationship name="users_has_many_likes" type="rel1n" layers="0"
+	 src-col-pattern="{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 src-table="alpha_schema.users"
+	 dst-table="alpha_schema.likes"
+	 src-required="true" dst-required="false"
+	 identifier="true"
+
+	upd-action="CASCADE"
+	del-action="CASCADE"/>
+
+<relationship name="posts_has_many_likes" type="rel1n" layers="0"
+	 src-col-pattern="{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 src-table="alpha_schema.posts"
+	 dst-table="alpha_schema.likes"
+	 src-required="true" dst-required="false"
+	 identifier="true"
+
+	upd-action="CASCADE"
+	del-action="CASCADE"/>
+
+<relationship name="subscriber" type="rel1n" layers="0"
+	 src-col-pattern="subscriber_id"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="subscriber_fk"
+	 custom-color="#d2027c"
+	 src-table="alpha_schema.users"
+	 dst-table="alpha_schema.subscriptions"
+	 src-required="true" dst-required="false"
+	upd-action="CASCADE"
+	del-action="CASCADE"/>
+
+<relationship name="subscribee" type="rel1n" layers="0"
+	 src-col-pattern="subscribee_id"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="subscribee_fk"
+	 custom-color="#813fd4"
+	 src-table="alpha_schema.users"
+	 dst-table="alpha_schema.subscriptions"
+	 src-required="true" dst-required="false"
+	upd-action="CASCADE"
+	del-action="CASCADE"/>
+
+<constraint name="subscriptions_uq" type="uq-constr" table="alpha_schema.subscriptions">
+	<columns names="subscriber_id,subscribee_id" ref-type="src-columns"/>
+</constraint>
+
+</dbmodel>
