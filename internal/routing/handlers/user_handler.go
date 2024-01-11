@@ -702,12 +702,14 @@ func (handler *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) 
 	records := len(users)
 
 	// Pre-checks on offset and limit
-	if offset > len(users) {
-		offset = len(users)
+	if offset > records {
+		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("offset invalid"))
+		return
 	}
 	end := offset + limit
-	if end > len(users) {
-		end = len(users)
+	if end > records {
+		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("limit invalid"))
+		return
 	}
 
 	// Get the subset
