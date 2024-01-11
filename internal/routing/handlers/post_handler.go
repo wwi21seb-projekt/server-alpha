@@ -1,14 +1,15 @@
 package handlers
 
 import (
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
 	"net/http"
 	"regexp"
 	"server-alpha/internal/managers"
 	"server-alpha/internal/schemas"
 	"server-alpha/internal/utils"
 	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 type PostHdl interface {
@@ -67,12 +68,13 @@ func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 	// Get the hashtags
 	hashtags := hashtagRegex.FindAllString(createPostRequest.Content, -1)
 
-	// Create the hashtags
 	for _, hashtag := range hashtags {
 		hashtagId := uuid.New()
 
-		queryString = "INSERT INTO alpha_schema.hashtags (hashtag_id, content) VALUES($1, $2) ON CONFLICT DO NOTHING"
-		if _, err = tx.Exec(transactionCtx, queryString, hashtagId, hashtag); err != nil {
+		queryString := `INSERT INTO alpha_schema.hashtags (hashtag_id, content) VALUES($1, $2) 
+						ON CONFLICT (content) DO UPDATE SET content=alpha_schema.hashtags.content 
+						RETURNING hashtag_id`
+		if err := tx.QueryRow(transactionCtx, queryString, hashtagId, hashtag).Scan(&hashtagId); err != nil {
 			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 			return
 		}
