@@ -102,13 +102,6 @@ type SubscriptionDTO struct {
 	Follower         string    `json:"follower"`
 }
 
-type UserSearchDTO struct {
-	Username            string `json:"username"`
-	Nickname            string `json:"nickname"`
-	ProfilePictureURL   string `json:"profilePictureUrl"`
-	LevenshteinDistance int    `json:"levenshteinDistance"`
-}
-
 type PaginatedResponse struct {
 	Records    interface{} `json:"records"`
 	Pagination Pagination  `json:"pagination"`

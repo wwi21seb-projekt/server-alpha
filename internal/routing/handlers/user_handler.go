@@ -677,24 +677,9 @@ func (handler *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Get the length of all users that match the search query
-	queryString := "SELECT COUNT(*) FROM alpha_schema.users"
-	row := handler.DatabaseManager.GetPool().QueryRow(ctx, queryString)
-	var records int
-	if err := row.Scan(&records); err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-		return
-	}
-
-	// Check if the offset is valid
-	if offset > records {
-		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("offset greater than records"))
-		return
-	}
-
 	// Get the users that match the search query
-	queryString = "SELECT username, nickname, profile_picture_url, levenshtein(username, $1) as ld FROM alpha_schema.users ORDER BY ld LIMIT $2 OFFSET $3"
-	rows, err := handler.DatabaseManager.GetPool().Query(ctx, queryString, searchQuery, limit, offset)
+	queryString := "SELECT username, nickname, profile_picture_url, levenshtein(username, $1) as ld FROM alpha_schema.users WHERE levenshtein(username, $1) <= 5 ORDER BY ld"
+	rows, err := handler.DatabaseManager.GetPool().Query(ctx, queryString, searchQuery)
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
@@ -702,16 +687,31 @@ func (handler *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) 
 	defer rows.Close()
 
 	// Create a list of users
-	users := make([]schemas.UserSearchDTO, 0, limit)
-
+	users := make([]schemas.AuthorDTO, 0)
+	var ld int
 	for rows.Next() {
-		user := schemas.UserSearchDTO{}
-		if err := rows.Scan(&user.Username, &user.Nickname, &user.ProfilePictureURL, &user.LevenshteinDistance); err != nil {
+		user := schemas.AuthorDTO{}
+		if err := rows.Scan(&user.Username, &user.Nickname, &user.ProfilePictureURL, &ld); err != nil {
 			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 			return
 		}
 		users = append(users, user)
 	}
+
+	// get the number of records
+	records := len(users)
+
+	// Pre-checks on offset and limit
+	if offset > len(users) {
+		offset = len(users)
+	}
+	end := offset + limit
+	if end > len(users) {
+		end = len(users)
+	}
+
+	// Get the subset
+	subset := users[offset:end]
 
 	// Create Pagination DTO
 	paginationDto := schemas.Pagination{
@@ -722,7 +722,7 @@ func (handler *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) 
 
 	// Create Paginated Response
 	paginatedResponse := schemas.PaginatedResponse{
-		Records:    users,
+		Records:    subset,
 		Pagination: paginationDto,
 	}
 
