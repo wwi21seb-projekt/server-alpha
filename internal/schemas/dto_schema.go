@@ -45,7 +45,7 @@ type TokenDTO struct {
 type AuthorDTO struct {
 	Username          string `json:"username"`
 	Nickname          string `json:"nickname"`
-	ProfilePictureURL string `json:"profile_picture_url"`
+	ProfilePictureURL string `json:"profilePictureURL"`
 }
 
 // PostDTO is a struct that represents a post response
@@ -54,10 +54,10 @@ type AuthorDTO struct {
 // Content is the content of the post
 // CreatedAt is the timestamp of when the post was created
 type PostDTO struct {
-	PostId    string    `json:"post_id"`
-	Author    AuthorDTO `json:"author"`
-	Content   string    `json:"content"`
-	CreatedAt string    `json:"created_at"`
+	PostId       string    `json:"postId"`
+	Author       AuthorDTO `json:"author"`
+	CreationDate string    `json:"creationDate"`
+	Content      string    `json:"content"`
 }
 
 /** 				**/
@@ -120,13 +120,19 @@ type SubscriptionDTO struct {
 
 type PaginatedResponse struct {
 	Records    interface{} `json:"records"`
-	Pagination Pagination  `json:"pagination"`
+	Pagination interface{} `json:"pagination"`
 }
 
 type Pagination struct {
 	Offset  int `json:"offset"`
 	Limit   int `json:"limit"`
 	Records int `json:"records"`
+}
+
+type PostPagination struct {
+	LastPostId string `json:"lastPostId"`
+	Limit      string `json:"limit"`
+	Records    int    `json:"records"`
 }
 
 // ChangeTrivialInformationRequest is a struct that represents a NicknameChange request

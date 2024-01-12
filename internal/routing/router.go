@@ -64,6 +64,11 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 	// Initialize user routes
 	r.Route("/api/v1/users", userRouter(&databaseMgr, &jwtMgr, &mailMgr))
 
+	// Initialize feed routes
+	r.Route("/api/v1/feed", func(r chi.Router) {
+		r.Get("/", postHdl.GetFeed)
+	})
+
 	// Initialize post routes
 	r.Route("/api/v1/posts", func(r chi.Router) {
 		r.Use(jwtMgr.JWTMiddleware)

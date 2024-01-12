@@ -6,4 +6,6 @@ const (
 	UsernameParamKey  = "username"
 	OffsetParamKey    = "offset"
 	LimitParamKey     = "limit"
+	PostIdParamKey    = "postId"
+	FeedTypeParamKey  = "feedType"
 )
