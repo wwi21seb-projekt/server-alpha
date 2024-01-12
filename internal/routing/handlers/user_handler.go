@@ -32,6 +32,7 @@ type UserHdl interface {
 	Unsubscribe(w http.ResponseWriter, r *http.Request)
 	SearchUsers(w http.ResponseWriter, r *http.Request)
 	ChangeNickname(w http.ResponseWriter, r *http.Request)
+	ChangeTrivialInformation(w http.ResponseWriter, r *http.Request)
 	ChangePassword(w http.ResponseWriter, r *http.Request)
 }
 
@@ -224,7 +225,7 @@ func (handler *UserHandler) ResendToken(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (handler *UserHandler) ChangeNickname(w http.ResponseWriter, r *http.Request) {
+func (handler *UserHandler) ChangeTrivialInformation(w http.ResponseWriter, r *http.Request) {
 	// Begin a new transaction
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
 	if tx == nil || transactionCtx == nil {
@@ -234,36 +235,31 @@ func (handler *UserHandler) ChangeNickname(w http.ResponseWriter, r *http.Reques
 	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel, err)
 
 	// Decode the request body into the nickname change request struct
-	nicknameChangeRequest := &schemas.NicknameChangeRequest{}
-	if err := utils.DecodeRequestBody(w, r, nicknameChangeRequest); err != nil {
+	changeTrivialInformationRequest := &schemas.ChangeTrivialInformationRequest{}
+	if err := utils.DecodeRequestBody(w, r, changeTrivialInformationRequest); err != nil {
 		return
 	}
-
-	// Get username from path
-	username := chi.URLParam(r, "username")
 
 	// Validate the nickname change request struct using the validator
-	if err := utils.ValidateStruct(w, nicknameChangeRequest); err != nil {
+	if err := utils.ValidateStruct(w, changeTrivialInformationRequest); err != nil {
 		return
 	}
 
-	// Get the user ID
-	_, userID, errorOccurred := retrieveUserIdAndEmail(transactionCtx, w, tx, username)
-	if errorOccurred {
-		return
-	}
+	// Get the user ID from the JWT token
+	claims := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
+	userId := claims["sub"].(string)
 
 	// Change the user's nickname
-	queryString := "UPDATE alpha_schema.users SET nickname = $1 WHERE user_id = $2"
-	if _, err := tx.Exec(transactionCtx, queryString, nicknameChangeRequest.NewNickname, userID); err != nil {
+	queryString := "UPDATE alpha_schema.users SET nickname = $1, status = $2 WHERE user_id = $3"
+	if _, err := tx.Exec(transactionCtx, queryString, changeTrivialInformationRequest.NewNickname, changeTrivialInformationRequest.Status, userId); err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
 	// Retrieve the updated user
-	userDto := &schemas.UserDTO{}
-	queryString = "SELECT username, nickname, email FROM alpha_schema.users WHERE user_id = $1"
-	if err := tx.QueryRow(transactionCtx, queryString, userID).Scan(&userDto.Username, &userDto.Nickname, &userDto.Email); err != nil {
+	userDto := &UserWithStatus{}
+	queryString = "SELECT username, nickname, email, status FROM alpha_schema.users WHERE user_id = $1"
+	if err := tx.QueryRow(transactionCtx, queryString, userId).Scan(&userDto.Username, &userDto.Nickname, &userDto.Email); err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
@@ -273,11 +269,11 @@ func (handler *UserHandler) ChangeNickname(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Send the updated user in the response
-	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(userDto); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func (handler *UserHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
@@ -290,24 +286,20 @@ func (handler *UserHandler) ChangePassword(w http.ResponseWriter, r *http.Reques
 	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel, err)
 
 	// Decode the request body into the password change request struct
-	passwordChangeRequest := &schemas.PasswordChangeRequest{}
+	passwordChangeRequest := &schemas.ChangePasswordRequest{}
 	if err = utils.DecodeRequestBody(w, r, passwordChangeRequest); err != nil {
 		return
 	}
-
-	// Get username from path
-	username := chi.URLParam(r, "username")
 
 	// Validate the password change request struct using the validator
 	if err = utils.ValidateStruct(w, passwordChangeRequest); err != nil {
 		return
 	}
 
-	// Get the user ID
-	_, userID, errorOccurred := retrieveUserIdAndEmail(transactionCtx, w, tx, username)
-	if errorOccurred {
-		return
-	}
+	// Get the user ID from the JWT token
+	claims := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
+	username := claims["username"].(string)
+	userId := claims["sub"].(string)
 
 	//Check if old password is correct
 	if err = checkPassword(w, transactionCtx, tx, username, passwordChangeRequest.OldPassword); err != nil {
@@ -323,7 +315,7 @@ func (handler *UserHandler) ChangePassword(w http.ResponseWriter, r *http.Reques
 
 	// Update the user's password in the database
 	queryString := "UPDATE alpha_schema.users SET password = $1 WHERE user_id = $2"
-	if _, err = tx.Exec(transactionCtx, queryString, hashedPassword, userID); err != nil {
+	if _, err = tx.Exec(transactionCtx, queryString, hashedPassword, userId); err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
@@ -334,11 +326,7 @@ func (handler *UserHandler) ChangePassword(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Send success response
-	w.WriteHeader(http.StatusOK)
-	if err = json.NewEncoder(w).Encode(map[string]string{"message": "Password updated successfully"}); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (handler *UserHandler) LoginUser(w http.ResponseWriter, r *http.Request) {

@@ -52,7 +52,9 @@ type PostDTO struct {
 	CreatedAt string    `json:"created_at"`
 }
 
+/** 				**/
 /** Request Objects **/
+/** 				**/
 
 // RegistrationRequest is a struct that represents a registration request
 // Username is required and must be less than 20 characters
@@ -121,14 +123,15 @@ type Pagination struct {
 
 // NicknameChangeRequest is a struct that represents a NicknameChange request
 // NewNickname is required and must be less than 25 characters
-type NicknameChangeRequest struct {
-	NewNickname string `json:"new_nickname" validate:"max=25"`
+type ChangeTrivialInformationRequest struct {
+	NewNickname string `json:"nickname" validate:"max=25"`
+	Status      string `json:"status" validate:"max=200"`
 }
 
 // PasswordChangeRequest is a struct that represents a PasswordChange request
 // OldPassword is required and must be at least 8 characters
 // NewPassword is required and must be at least 8 characters
-type PasswordChangeRequest struct {
-	OldPassword string `json:"old_password" validate:"required,min=8,password_validation"`
-	NewPassword string `json:"new_password" validate:"required,min=8,password_validation"`
+type ChangePasswordRequest struct {
+	OldPassword string `json:"oldPassword" validate:"required,min=8,password_validation"`
+	NewPassword string `json:"newPassword" validate:"required,min=8,password_validation"`
 }
