@@ -4,15 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math/rand"
+	"net/http"
+	"strconv"
+	"time"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	log "github.com/sirupsen/logrus"
-	"math/rand"
-	"net/http"
-	"strconv"
-	"time"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -31,7 +32,6 @@ type UserHdl interface {
 	Subscribe(w http.ResponseWriter, r *http.Request)
 	Unsubscribe(w http.ResponseWriter, r *http.Request)
 	SearchUsers(w http.ResponseWriter, r *http.Request)
-	ChangeNickname(w http.ResponseWriter, r *http.Request)
 	ChangeTrivialInformation(w http.ResponseWriter, r *http.Request)
 	ChangePassword(w http.ResponseWriter, r *http.Request)
 }
@@ -246,10 +246,14 @@ func (handler *UserHandler) ChangeTrivialInformation(w http.ResponseWriter, r *h
 	}
 
 	// Get the user ID from the JWT token
-	claims := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
+	claims, ok := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
+	if !ok {
+		utils.WriteAndLogError(w, schemas.Unauthorized, http.StatusUnauthorized, errors.New("unauthorized"))
+		return
+	}
 	userId := claims["sub"].(string)
 
-	// Change the user's nickname
+	// Change the user's nickname and status
 	queryString := "UPDATE alpha_schema.users SET nickname = $1, status = $2 WHERE user_id = $3"
 	if _, err := tx.Exec(transactionCtx, queryString, changeTrivialInformationRequest.NewNickname, changeTrivialInformationRequest.Status, userId); err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
@@ -257,9 +261,9 @@ func (handler *UserHandler) ChangeTrivialInformation(w http.ResponseWriter, r *h
 	}
 
 	// Retrieve the updated user
-	userDto := &UserWithStatus{}
-	queryString = "SELECT username, nickname, email, status FROM alpha_schema.users WHERE user_id = $1"
-	if err := tx.QueryRow(transactionCtx, queryString, userId).Scan(&userDto.Username, &userDto.Nickname, &userDto.Email); err != nil {
+	UserNicknameAndStatusDTO := &schemas.UserNicknameAndStatusDTO{}
+	queryString = "SELECT nickname, status FROM alpha_schema.users WHERE user_id = $1"
+	if err := tx.QueryRow(transactionCtx, queryString, userId).Scan(&UserNicknameAndStatusDTO.Nickname, &UserNicknameAndStatusDTO.Status); err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
@@ -269,7 +273,7 @@ func (handler *UserHandler) ChangeTrivialInformation(w http.ResponseWriter, r *h
 	}
 
 	// Send the updated user in the response
-	if err := json.NewEncoder(w).Encode(userDto); err != nil {
+	if err := json.NewEncoder(w).Encode(UserNicknameAndStatusDTO); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -297,7 +301,11 @@ func (handler *UserHandler) ChangePassword(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Get the user ID from the JWT token
-	claims := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
+	claims, ok := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
+	if !ok {
+		utils.WriteAndLogError(w, schemas.Unauthorized, http.StatusUnauthorized, errors.New("unauthorized"))
+		return
+	}
 	username := claims["username"].(string)
 	userId := claims["sub"].(string)
 
@@ -850,7 +858,7 @@ func checkPassword(w http.ResponseWriter, transactionCtx context.Context, tx pgx
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(password), []byte(givenPassword)); err != nil {
-		utils.WriteAndLogError(w, schemas.InvalidCredentials, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(w, schemas.InvalidCredentials, http.StatusForbidden, err)
 		return err
 	}
 	return nil

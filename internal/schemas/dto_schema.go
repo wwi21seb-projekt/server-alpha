@@ -24,6 +24,14 @@ type UserDTO struct {
 	Email    string `json:"email"`
 }
 
+// UserNicknameAndStatusDTO is a struct that represents a user response with nickname and status
+// Nickname is the nickname of the user
+// Status is the status of the user
+type UserNicknameAndStatusDTO struct {
+	Nickname string `json:"nickname"`
+	Status   string `json:"status"`
+}
+
 // TokenDTO is a struct that represents a token response
 // Token is the JWT token
 type TokenDTO struct {
@@ -125,7 +133,7 @@ type Pagination struct {
 // NewNickname is required and must be less than 25 characters
 type ChangeTrivialInformationRequest struct {
 	NewNickname string `json:"nickname" validate:"max=25"`
-	Status      string `json:"status" validate:"max=200"`
+	Status      string `json:"status" validate:"max=256"`
 }
 
 // PasswordChangeRequest is a struct that represents a PasswordChange request
