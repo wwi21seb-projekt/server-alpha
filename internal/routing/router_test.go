@@ -3,17 +3,18 @@ package routing
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"net/http"
+	"net/http/httptest"
+	"server-alpha/internal/managers"
+	"server-alpha/internal/managers/mocks"
+	"testing"
+
 	"github.com/gavv/httpexpect/v2"
 	"github.com/google/uuid"
 	"github.com/pashagolub/pgxmock/v3"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/crypto/bcrypt"
-	"net/http"
-	"net/http/httptest"
-	"server-alpha/internal/managers"
-	"server-alpha/internal/managers/mocks"
-	"testing"
 )
 
 // define request payload for user registration
@@ -204,6 +205,7 @@ func TestUserLogin(t *testing.T) {
 			poolMock.ExpectBegin()
 			poolMock.ExpectQuery("SELECT activated_at").WithArgs(tc.user.Username).WillReturnRows(pgxmock.NewRows([]string{"activated_at"}).AddRow("2006-01-02 15:04:05.999999999Z"))
 			poolMock.ExpectQuery("SELECT password, user_id").WithArgs(tc.user.Username).WillReturnRows(pgxmock.NewRows([]string{"password", "user_id"}).AddRow(tc.user.HashedPassword, tc.user.UserId))
+			poolMock.ExpectQuery("SELECT email, user_id").WithArgs(tc.user.Username).WillReturnRows(pgxmock.NewRows([]string{"email", "user_id"}).AddRow(tc.user.Email, tc.user.UserId))
 
 			// Assert that the response status code is 200 and the response body contains the expected values
 			expect := httpexpect.Default(t, server.URL)

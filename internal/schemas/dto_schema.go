@@ -24,6 +24,14 @@ type UserDTO struct {
 	Email    string `json:"email"`
 }
 
+// UserNicknameAndStatusDTO is a struct that represents a user response with nickname and status
+// Nickname is the nickname of the user
+// Status is the status of the user
+type UserNicknameAndStatusDTO struct {
+	Nickname string `json:"nickname"`
+	Status   string `json:"status"`
+}
+
 // TokenDTO is a struct that represents a token response
 // Token is the JWT token
 type TokenDTO struct {
@@ -52,7 +60,9 @@ type PostDTO struct {
 	CreatedAt string    `json:"created_at"`
 }
 
+/** 				**/
 /** Request Objects **/
+/** 				**/
 
 // RegistrationRequest is a struct that represents a registration request
 // Username is required and must be less than 20 characters
@@ -117,4 +127,20 @@ type Pagination struct {
 	Offset  int `json:"offset"`
 	Limit   int `json:"limit"`
 	Records int `json:"records"`
+}
+
+// ChangeTrivialInformationRequest is a struct that represents a NicknameChange request
+// NewNickname is required and must be less than 25 characters
+// Status is required and must be less than 256 characters
+type ChangeTrivialInformationRequest struct {
+	NewNickname string `json:"nickname" validate:"max=25"`
+	Status      string `json:"status" validate:"max=256"`
+}
+
+// ChangePasswordRequest is a struct that represents a PasswordChange request
+// OldPassword is required and must be at least 8 characters
+// NewPassword is required and must be at least 8 characters
+type ChangePasswordRequest struct {
+	OldPassword string `json:"oldPassword" validate:"required,min=8,password_validation"`
+	NewPassword string `json:"newPassword" validate:"required,min=8,password_validation"`
 }
