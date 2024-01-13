@@ -309,8 +309,8 @@ func (handler *UserHandler) ChangePassword(w http.ResponseWriter, r *http.Reques
 	username := claims["username"].(string)
 	userId := claims["sub"].(string)
 
-	//Check if old password is correct
-	if err = checkPassword(w, transactionCtx, tx, username, passwordChangeRequest.OldPassword); err != nil {
+	// Check if old password is correct
+	if err = checkPassword(transactionCtx, w, tx, username, passwordChangeRequest.OldPassword); err != nil {
 		return
 	}
 
@@ -373,8 +373,8 @@ func (handler *UserHandler) LoginUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	//Check if password is correct
-	if err = checkPassword(w, transactionCtx, tx, loginRequest.Username, loginRequest.Password); err != nil {
+	// Check if password is correct
+	if err = checkPassword(transactionCtx, w, tx, loginRequest.Username, loginRequest.Password); err != nil {
 		return
 	}
 
@@ -839,7 +839,7 @@ func (handler *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-func checkPassword(w http.ResponseWriter, transactionCtx context.Context, tx pgx.Tx, username string, givenPassword string) error {
+func checkPassword(transactionCtx context.Context, w http.ResponseWriter, tx pgx.Tx, username, givenPassword string) error {
 	queryString := "SELECT password, user_id FROM alpha_schema.users WHERE username = $1"
 	rows, err := tx.Query(transactionCtx, queryString, username)
 	if err != nil {
