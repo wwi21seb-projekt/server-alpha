@@ -262,11 +262,8 @@ func (handler *UserHandler) ChangeTrivialInformation(w http.ResponseWriter, r *h
 
 	// Retrieve the updated user
 	UserNicknameAndStatusDTO := &schemas.UserNicknameAndStatusDTO{}
-	queryString = "SELECT nickname, status FROM alpha_schema.users WHERE user_id = $1"
-	if err := tx.QueryRow(transactionCtx, queryString, userId).Scan(&UserNicknameAndStatusDTO.Nickname, &UserNicknameAndStatusDTO.Status); err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-		return
-	}
+	UserNicknameAndStatusDTO.Nickname = changeTrivialInformationRequest.NewNickname
+	UserNicknameAndStatusDTO.Status = changeTrivialInformationRequest.Status
 
 	if err := utils.CommitTransaction(w, tx, transactionCtx, cancel); err != nil {
 		return
