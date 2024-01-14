@@ -34,6 +34,7 @@ type UserHdl interface {
 	SearchUsers(w http.ResponseWriter, r *http.Request)
 	ChangeTrivialInformation(w http.ResponseWriter, r *http.Request)
 	ChangePassword(w http.ResponseWriter, r *http.Request)
+	RetrieveUserPosts(w http.ResponseWriter, r *http.Request)
 }
 
 type UserHandler struct {
@@ -859,4 +860,48 @@ func checkPassword(transactionCtx context.Context, w http.ResponseWriter, tx pgx
 		return err
 	}
 	return nil
+}
+
+func (handler *UserHandler) RetrieveUserPosts(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithDeadline(r.Context(), time.Now().Add(10*time.Second))
+	defer func() {
+		if err := ctx.Err(); err != nil {
+			log.Debug("Context error: ", err)
+		}
+		cancel()
+		log.Debug("Context canceled")
+	}()
+
+	// Get the username from URL parameter
+	username := chi.URLParam(r, utils.UsernameKey)
+
+	// Retrieve posts from database
+	queryString := "SELECT p.post_id, p.content, p.created_at FROM alpha_schema.posts p JOIN alpha_schema.users u on " +
+		"p.author_id = u.user_id WHERE u.username = $1 ORDER BY p.created_at"
+	rows, err := handler.DatabaseManager.GetPool().Query(ctx, queryString, username)
+	if err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+	defer rows.Close()
+
+	// Create a list of posts
+	posts := make([]schemas.PostDTO, 0)
+	var createdAt pgtype.Timestamptz
+	for rows.Next() {
+		post := schemas.PostDTO{}
+		if err := rows.Scan(&post.PostId, &post.Content, &createdAt); err != nil {
+			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+			return
+		}
+		post.CreatedAt = createdAt.Time.Format(time.RFC3339)
+		posts = append(posts, post)
+	}
+
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(posts); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		utils.WriteAndLogError(w, schemas.InternalServerError, http.StatusInternalServerError, err)
+		return
+	}
 }
