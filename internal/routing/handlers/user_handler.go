@@ -157,7 +157,7 @@ func (handler *UserHandler) ActivateUser(w http.ResponseWriter, r *http.Request)
 
 	// Check if the user is activated
 	if _, activated, err := checkUserExistenceAndActivation(transactionCtx, w, tx, username); err != nil {
-
+		return
 	} else if activated {
 		utils.WriteAndLogError(w, schemas.UserAlreadyActivated, http.StatusAlreadyReported, errors.New("already activated"))
 		return

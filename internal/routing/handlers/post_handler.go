@@ -17,7 +17,7 @@ import (
 
 type PostHdl interface {
 	CreatePost(w http.ResponseWriter, r *http.Request)
-	GetFeed(w http.ResponseWriter, r *http.Request)
+	HandleGetFeedRequest(w http.ResponseWriter, r *http.Request)
 }
 
 type PostHandler struct {
@@ -28,9 +28,10 @@ type PostHandler struct {
 
 var hashtagRegex = regexp.MustCompile(`#\w+`)
 
-func NewPostHandler(databaseManager *managers.DatabaseMgr) PostHdl {
+func NewPostHandler(databaseManager *managers.DatabaseMgr, jwtManager *managers.JWTMgr) PostHdl {
 	return &PostHandler{
 		DatabaseManager: *databaseManager,
+		JWTManager:      *jwtManager,
 		Validator:       utils.GetValidator(),
 	}
 }
@@ -119,7 +120,7 @@ func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 	}, http.StatusCreated)
 }
 
-func (handler *PostHandler) GetFeed(w http.ResponseWriter, r *http.Request) {
+func (handler *PostHandler) HandleGetFeedRequest(w http.ResponseWriter, r *http.Request) {
 	// Begin a new transaction
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
 	if tx == nil || transactionCtx == nil {
@@ -128,9 +129,47 @@ func (handler *PostHandler) GetFeed(w http.ResponseWriter, r *http.Request) {
 	var err error
 	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel, err)
 
+	// Determine the feed type
+	publicFeedWanted, claims, err := determineFeedType(r, w, handler)
+	if err != nil {
+		return
+	}
+
+	// Retrieve the feed based on the wanted feed type
+	posts, records, lastPostId, limit, err := retrieveFeed(transactionCtx, tx, w, r, publicFeedWanted, claims)
+	if err != nil {
+		return
+	}
+
+	// Get the last post ID
+	if len(posts) > 0 {
+		lastPostId = posts[len(posts)-1].PostId
+	}
+
+	// Create pagination DTO
+	pagination := &schemas.PostPagination{
+		LastPostId: lastPostId,
+		Limit:      limit,
+		Records:    records,
+	}
+
+	paginatedResponse := &schemas.PaginatedResponse{
+		Records:    posts,
+		Pagination: pagination,
+	}
+
+	if err := utils.CommitTransaction(w, nil, transactionCtx, nil); err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+	}
+
+	utils.WriteAndLogResponse(w, paginatedResponse, http.StatusOK)
+}
+
+func determineFeedType(r *http.Request, w http.ResponseWriter, handler *PostHandler) (bool, jwt.Claims, error) {
 	// Get UserId from JWT token
 	authHeader := r.Header.Get("Authorization")
 	var claims jwt.Claims
+	var err error
 	publicFeedWanted := false
 
 	if authHeader == "" {
@@ -140,7 +179,7 @@ func (handler *PostHandler) GetFeed(w http.ResponseWriter, r *http.Request) {
 		claims, err = handler.JWTManager.ValidateJWT(jwtToken)
 		if err != nil {
 			utils.WriteAndLogError(w, schemas.Unauthorized, http.StatusUnauthorized, err)
-			return
+			return false, nil, err
 		}
 
 		feedType := r.URL.Query().Get(utils.FeedTypeParamKey)
@@ -149,30 +188,45 @@ func (handler *PostHandler) GetFeed(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if publicFeedWanted {
-		getPublicFeed(transactionCtx, tx, w, r)
-		return
-	}
-
-	getPrivateFeed(transactionCtx, tx, w, r, claims)
+	return publicFeedWanted, claims, nil
 }
 
-func getPrivateFeed(ctx context.Context, tx pgx.Tx, w http.ResponseWriter, r *http.Request, claims jwt.Claims) {
+func retrieveFeed(ctx context.Context, tx pgx.Tx, w http.ResponseWriter, r *http.Request, private bool, claims jwt.Claims) ([]*schemas.PostDTO, int, string, string, error) {
 	lastPostId := r.URL.Query().Get(utils.PostIdParamKey)
 	limit := r.URL.Query().Get(utils.LimitParamKey)
-	userId := claims.(jwt.MapClaims)["sub"]
 
-	// Get the count of posts in the database that match the criteria
-	queryString := `SELECT COUNT(*) FROM alpha_schema.posts
+	var userId interface{}
+	var countQuery string
+	var dataQuery string
+	var countQueryArgs []interface{}
+	var dataQueryArgs []interface{}
+
+	if private {
+		userId = claims.(jwt.MapClaims)["sub"]
+		countQuery = `SELECT COUNT(*) FROM alpha_schema.posts
     					INNER JOIN alpha_schema.users ON author_id = user_id
     					INNER JOIN alpha_schema.subscriptions ON user_id = subscriptions.subscriber_id
     					WHERE subscriptions.subscriber_id = $1`
-	row := tx.QueryRow(ctx, queryString, userId)
+		dataQuery = `SELECT post_id, username, nickname, profile_picture_url, content, posts.created_at FROM alpha_schema.posts
+					INNER JOIN alpha_schema.users ON author_id = user_id
+					INNER JOIN alpha_schema.subscriptions ON user_id = subscriptions.subscriber_id
+					WHERE subscriptions.subscriber_id = $1`
+
+		countQueryArgs = append(countQueryArgs, userId)
+		dataQueryArgs = append(dataQueryArgs, userId)
+	} else {
+		countQuery = "SELECT COUNT(*) FROM alpha_schema.posts"
+		dataQuery = `SELECT post_id, username, nickname, profile_picture_url, content, posts.created_at FROM alpha_schema.posts
+					INNER JOIN alpha_schema.users ON author_id = user_id`
+	}
+
+	// Get the count of posts in the database that match the criteria
+	row := tx.QueryRow(ctx, countQuery, countQueryArgs...)
 
 	var count int
 	if err := row.Scan(&count); err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-		return
+		return nil, 0, "", "", err
 	}
 
 	var rows pgx.Rows
@@ -180,33 +234,25 @@ func getPrivateFeed(ctx context.Context, tx pgx.Tx, w http.ResponseWriter, r *ht
 
 	if lastPostId == "" {
 		// If we don't have a last post ID, we'll return the newest posts
-		queryString = `SELECT post_id, username, nickname, profile_picture_url, content, posts.created_at FROM alpha_schema.posts
-					INNER JOIN alpha_schema.users ON author_id = user_id
-					INNER JOIN alpha_schema.subscriptions ON user_id = subscriptions.subscriber_id
-					WHERE subscriptions.subscriber_id = $1
-					ORDER BY created_at DESC LIMIT $2`
-		rows, err = tx.Query(ctx, queryString, userId, limit)
+		dataQuery += " ORDER BY created_at DESC LIMIT $2"
+		dataQueryArgs = append(dataQueryArgs, limit)
 	} else {
 		// If we have a last post ID, we'll return the posts that were created before the last post
-		queryString = `SELECT post_id, username, nickname, profile_picture_url, content, posts.created_at FROM alpha_schema.posts
-					INNER JOIN alpha_schema.users ON author_id = user_id
-					INNER JOIN alpha_schema.subscriptions ON user_id = subscriptions.subscriber_id
-					WHERE subscriptions.subscriber_id = $1
-					AND posts.created_at < (SELECT created_at FROM alpha_schema.posts WHERE post_id = $2)
-					ORDER BY created_at DESC LIMIT $3`
-		rows, err = tx.Query(ctx, queryString, userId, lastPostId, limit)
+		dataQuery += " AND posts.created_at < (SELECT created_at FROM alpha_schema.posts WHERE post_id = $2) ORDER BY created_at DESC LIMIT $3"
+		dataQueryArgs = append(dataQueryArgs, lastPostId, limit)
 	}
 
+	rows, err = tx.Query(ctx, dataQuery, dataQueryArgs...)
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-		return
+		return nil, 0, "", "", err
 	}
 
 	// Iterate over the rows and create the post DTOs
 	intLimit, err := strconv.Atoi(limit)
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, err)
-		return
+		return nil, 0, "", "", err
 	}
 
 	posts := make([]*schemas.PostDTO, intLimit)
@@ -215,106 +261,11 @@ func getPrivateFeed(ctx context.Context, tx pgx.Tx, w http.ResponseWriter, r *ht
 		post := &schemas.PostDTO{}
 		if err := rows.Scan(&post.PostId, &post.Author.Username, &post.Author.Nickname, &post.Author.ProfilePictureURL, &post.Content, &post.CreationDate); err != nil {
 			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-			return
+			return nil, 0, "", "", err
 		}
 
 		posts = append(posts, post)
 	}
 
-	// Get the last post ID
-	if len(posts) > 0 {
-		lastPostId = posts[len(posts)-1].PostId
-	}
-
-	// Create pagination DTO
-	pagination := &schemas.PostPagination{
-		LastPostId: lastPostId,
-		Limit:      limit,
-		Records:    count,
-	}
-
-	paginatedResponse := &schemas.PaginatedResponse{
-		Records:    posts,
-		Pagination: pagination,
-	}
-
-	if err := utils.CommitTransaction(w, nil, ctx, nil); err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-	}
-
-	utils.WriteAndLogResponse(w, paginatedResponse, http.StatusOK)
-}
-
-func getPublicFeed(ctx context.Context, tx pgx.Tx, w http.ResponseWriter, r *http.Request) {
-	lastPostId := r.URL.Query().Get(utils.PostIdParamKey)
-	limit := r.URL.Query().Get(utils.LimitParamKey)
-
-	// Get the count of posts in the database
-	queryString := "SELECT COUNT(*) FROM alpha_schema.posts"
-	row := tx.QueryRow(ctx, queryString)
-
-	var count int
-	if err := row.Scan(&count); err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-		return
-	}
-
-	// Select the limit newest posts from the database
-	if limit == "" {
-		limit = "10"
-	}
-
-	if lastPostId == "" {
-		// If we don't have a last post ID, we'll return the newest posts
-		queryString = `SELECT post_id, username, nickname, profile_picture_url, content, posts.created_at FROM alpha_schema.posts
-					INNER JOIN alpha_schema.users ON author_id = user_id
-					ORDER BY created_at DESC LIMIT $1`
-	} else {
-		// If we have a last post ID, we'll return the posts that were created before the last post
-		queryString = `SELECT post_id, username, nickname, content, posts.created_at FROM alpha_schema.posts
-					INNER JOIN alpha_schema.users ON author_id = user_id 
-				   	WHERE posts.created_at < (SELECT created_at FROM alpha_schema.posts WHERE post_id = $1)
-					ORDER BY created_at DESC LIMIT $2`
-	}
-
-	rows, err := tx.Query(ctx, queryString, lastPostId, limit)
-	if err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-		return
-	}
-
-	// Iterate over the rows and create the post DTOs
-	posts := make([]*schemas.PostDTO, 0)
-	for rows.Next() {
-		post := &schemas.PostDTO{}
-		if err := rows.Scan(&post.PostId, &post.Author.Username, &post.Author.Nickname, &post.Author.ProfilePictureURL, &post.Content, &post.CreationDate); err != nil {
-			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-			return
-		}
-
-		posts = append(posts, post)
-	}
-
-	// Get the last post ID
-	if len(posts) > 0 {
-		lastPostId = posts[len(posts)-1].PostId
-	}
-
-	// Create pagination DTO
-	pagination := &schemas.PostPagination{
-		LastPostId: lastPostId,
-		Limit:      limit,
-		Records:    count,
-	}
-
-	paginatedResponse := &schemas.PaginatedResponse{
-		Records:    posts,
-		Pagination: pagination,
-	}
-
-	if err := utils.CommitTransaction(w, nil, ctx, nil); err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-	}
-
-	utils.WriteAndLogResponse(w, paginatedResponse, http.StatusOK)
+	return posts, count, lastPostId, limit, nil
 }

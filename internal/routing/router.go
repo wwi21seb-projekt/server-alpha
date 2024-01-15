@@ -23,7 +23,7 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 	r.Use(middleware.SetHeader("Content-Type", "application/json"))
 
 	// Initialize handlers
-	postHdl := handlers.NewPostHandler(&databaseMgr)
+	postHdl := handlers.NewPostHandler(&databaseMgr, &jwtMgr)
 
 	// Initialize user handlers
 	userHdl := handlers.NewUserHandler(&databaseMgr, &jwtMgr, &mailMgr)
@@ -40,7 +40,7 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 		w.WriteHeader(http.StatusOK)
 	})
 
-	r.Get("/imprint", func(w http.ResponseWriter, r *http.Request) {
+	r.Get("/api/v1/imprint", func(w http.ResponseWriter, r *http.Request) {
 		imprint := "Impressum\n\nEinen Löwen interessiert es nicht, was Schafe über ihn denken.\n\nDiese Webseite " +
 			"wird im Rahmen eines Universitätsprojektes angeboten von:\nKurs WWI21SEB\nDuale Hochschule " +
 			"Baden-Württemberg Mannheim\nCoblitzallee 1 – 9, 68163 Mannheim\n\nKontakt:\nE-Mail: " +
@@ -66,7 +66,7 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 
 	// Initialize feed routes
 	r.Route("/api/v1/feed", func(r chi.Router) {
-		r.Get("/", postHdl.GetFeed)
+		r.Get("/", postHdl.HandleGetFeedRequest)
 	})
 
 	// Initialize post routes
