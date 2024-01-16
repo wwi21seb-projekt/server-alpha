@@ -44,7 +44,7 @@ jobs:
           file: ./build/package/Dockerfile
 
       - name: Copy docker-compose prod file to server
-        uses: appleboy/scp-action@v0.1.6
+        uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
