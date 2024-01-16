@@ -32,10 +32,12 @@ type UserNicknameAndStatusDTO struct {
 	Status   string `json:"status"`
 }
 
-// TokenDTO is a struct that represents a token response
-// Token is the JWT token
-type TokenDTO struct {
-	Token string `json:"token"`
+// TokenPairDTO is a struct that represents a token response
+// Token is the main JWT token used for auth
+// RefreshToken is the refresh token used to get a new token
+type TokenPairDTO struct {
+	Token        string `json:"token"`
+	RefreshToken string `json:"refreshToken"`
 }
 
 // AuthorDTO is a struct that represents an author response

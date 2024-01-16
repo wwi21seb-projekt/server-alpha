@@ -116,7 +116,7 @@ func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 			ProfilePictureURL: "",
 		},
 		Content:      createPostRequest.Content,
-		CreationDate: createdAt.String(),
+		CreationDate: createdAt.Format(time.RFC3339),
 	}, http.StatusCreated)
 }
 

@@ -17,10 +17,9 @@ import (
 )
 
 type JWTMgr interface {
-	GenerateJWT(claims jwt.Claims) (string, error)
+	GenerateJWT(userId, username string, isRefreshToken bool) (string, error)
 	ValidateJWT(tokenString string) (jwt.Claims, error)
 	JWTMiddleware(next http.Handler) http.Handler
-	GenerateClaims(userId, username string) jwt.Claims
 }
 
 // JWTManager handles JWT generation, signing, and validation.
@@ -201,18 +200,32 @@ func generateAndStoreKeys(privateKeyPath, publicKeyPath string) error {
 }
 
 // GenerateClaims generates the standard JWT claims.
-func (jm *JWTManager) GenerateClaims(userId, username string) jwt.Claims {
+func generateClaims(userId, username string, isRefreshToken bool) jwt.Claims {
+	var exp int64
+	var refresh string
+
+	if isRefreshToken {
+		exp = time.Now().Add(time.Hour * 24 * 7).Unix()
+		refresh = "true"
+	} else {
+		exp = time.Now().Add(time.Hour * 24).Unix()
+		refresh = "false"
+	}
+
 	return jwt.MapClaims{
 		"iss":      "server-alpha.tech",
 		"iat":      time.Now().Unix(),
-		"exp":      time.Now().Add(time.Hour * 24).Unix(),
+		"exp":      exp,
 		"sub":      userId,
 		"username": username,
+		"refresh":  refresh,
 	}
 }
 
 // GenerateJWT generates a new JWT with the given claims.
-func (jm *JWTManager) GenerateJWT(claims jwt.Claims) (string, error) {
+func (jm *JWTManager) GenerateJWT(userId, username string, isRefreshToken bool) (string, error) {
+	claims := generateClaims(userId, username, isRefreshToken)
+
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
 	return token.SignedString(jm.privateKey)
 }
