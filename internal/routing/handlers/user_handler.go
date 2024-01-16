@@ -728,9 +728,9 @@ func (handler *UserHandler) Unsubscribe(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	//Check and throw error if user wants to delete someone else's subscription
+	// Check and throw error if user wants to delete someone else's subscription
 	if subscriberId != jwtUserId {
-		utils.WriteAndLogError(w, schemas.UnsubscribeForbidden, http.StatusForbidden, errors.New("You can only delete your own subscriptions"))
+		utils.WriteAndLogError(w, schemas.UnsubscribeForbidden, http.StatusForbidden, errors.New("you can only delete your own subscriptions"))
 		return
 	}
 
