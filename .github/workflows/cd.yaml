@@ -54,7 +54,7 @@ jobs:
           target: "/home/serveralpha"
 
       - name: Setup SSH
-        uses: appleboy/ssh-action@v1.0.1
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
