@@ -875,6 +875,28 @@ func (handler *UserHandler) RetrieveUserPosts(w http.ResponseWriter, r *http.Req
 	// Get the username from URL parameter
 	username := chi.URLParam(r, utils.UsernameKey)
 
+	// Get the offset from the query parameters
+	offsetString := r.URL.Query().Get(utils.OffsetParamKey)
+	if offsetString == "" {
+		offsetString = "0"
+	}
+	offset, err := strconv.Atoi(offsetString)
+	if err != nil {
+		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("offset invalid"))
+		return
+	}
+
+	// Get the limit from the query parameters
+	limitString := r.URL.Query().Get(utils.LimitParamKey)
+	if limitString == "" {
+		limitString = "10"
+	}
+	limit, err := strconv.Atoi(limitString)
+	if err != nil {
+		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("limit invalid"))
+		return
+	}
+
 	// Retrieve posts from database
 	queryString := "SELECT p.post_id, p.content, p.created_at FROM alpha_schema.posts p JOIN alpha_schema.users u on " +
 		"p.author_id = u.user_id WHERE u.username = $1 ORDER BY p.created_at"
@@ -898,8 +920,38 @@ func (handler *UserHandler) RetrieveUserPosts(w http.ResponseWriter, r *http.Req
 		posts = append(posts, post)
 	}
 
+	// get the number of records
+	records := len(posts)
+
+	// Pre-checks on offset and limit
+	if offset > records {
+		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("offset invalid"))
+		return
+	}
+	end := offset + limit
+	if end > records {
+		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("limit invalid"))
+		return
+	}
+
+	// Get the subset
+	subset := posts[offset:end]
+
+	// Create Pagination DTO
+	paginationDto := schemas.Pagination{
+		Offset:  offset,
+		Limit:   limit,
+		Records: records,
+	}
+
+	// Create Paginated Response
+	paginatedResponse := schemas.PaginatedResponse{
+		Records:    subset,
+		Pagination: paginationDto,
+	}
+
 	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(posts); err != nil {
+	if err := json.NewEncoder(w).Encode(paginatedResponse); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		utils.WriteAndLogError(w, schemas.InternalServerError, http.StatusInternalServerError, err)
 		return
