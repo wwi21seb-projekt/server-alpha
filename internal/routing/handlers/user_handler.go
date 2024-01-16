@@ -52,6 +52,8 @@ func NewUserHandler(databaseManager *managers.DatabaseMgr, jwtManager *managers.
 	}
 }
 
+var errInvalidToken = errors.New("invalid token")
+
 // RegisterUser registers a new user and sends an activation token to the user's email.
 func (handler *UserHandler) RegisterUser(w http.ResponseWriter, r *http.Request) {
 	// Begin a new transaction
@@ -727,7 +729,7 @@ func (handler *UserHandler) RefreshToken(w http.ResponseWriter, r *http.Request)
 	isRefreshToken := refreshClaims["refresh"].(string)
 
 	if isRefreshToken != "true" {
-		utils.WriteAndLogError(w, schemas.Unauthorized, http.StatusUnauthorized, errors.New("invalid token"))
+		utils.WriteAndLogError(w, schemas.Unauthorized, http.StatusUnauthorized, errInvalidToken)
 		return
 	}
 
@@ -813,8 +815,8 @@ func checkTokenValidity(ctx context.Context, w http.ResponseWriter, tx pgx.Tx, t
 	defer rows.Close()
 
 	if !rows.Next() {
-		utils.WriteAndLogError(w, schemas.InvalidToken, http.StatusUnauthorized, errors.New("invalid token"))
-		return errors.New("invalid token")
+		utils.WriteAndLogError(w, schemas.InvalidToken, http.StatusUnauthorized, errInvalidToken)
+		return errInvalidToken
 	}
 
 	var expiresAt pgtype.Timestamptz
