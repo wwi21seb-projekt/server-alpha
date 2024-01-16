@@ -73,4 +73,12 @@ var (
 		Message: "The subscription already exists. Please check the username and try again.",
 		Code:    "ERR-016",
 	}
+	SubscriptionSelfFollow = &CustomError{
+		Message: "You cannot follow yourself. Please check the username and try again.",
+		Code:    "ERR-017",
+	}
+	UnsubscribeForbidden = &CustomError{
+		Message: "You can only delete your own subscriptions.",
+		Code:    "ERR-018",
+	}
 )
