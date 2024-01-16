@@ -33,6 +33,7 @@ type UserHdl interface {
 	SearchUsers(w http.ResponseWriter, r *http.Request)
 	ChangeTrivialInformation(w http.ResponseWriter, r *http.Request)
 	ChangePassword(w http.ResponseWriter, r *http.Request)
+	RefreshToken(w http.ResponseWriter, r *http.Request)
 }
 
 type UserHandler struct {
@@ -698,6 +699,47 @@ func (handler *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) 
 
 	// Send success response
 	utils.WriteAndLogResponse(w, paginatedResponse, http.StatusOK)
+}
+
+// RefreshToken refreshes the token pair of the user.
+func (handler *UserHandler) RefreshToken(w http.ResponseWriter, r *http.Request) {
+	// Get the refresh token from the request body
+	refreshTokenRequest := &schemas.RefreshTokenRequest{}
+	if err := utils.DecodeRequestBody(w, r, refreshTokenRequest); err != nil {
+		return
+	}
+
+	// Validate the refresh token request struct using the validator
+	if err := utils.ValidateStruct(w, refreshTokenRequest); err != nil {
+		return
+	}
+
+	// Get the user ID and username from the refresh token
+	refreshTokenClaims, err := handler.JWTManager.ValidateJWT(refreshTokenRequest.RefreshToken)
+	if err != nil {
+		utils.WriteAndLogError(w, schemas.InvalidToken, http.StatusUnauthorized, err)
+		return
+	}
+
+	refreshClaims := refreshTokenClaims.(jwt.MapClaims)
+	userId := refreshClaims["sub"].(string)
+	username := refreshClaims["username"].(string)
+	isRefreshToken := refreshClaims["refresh"].(string)
+
+	if isRefreshToken != "true" {
+		utils.WriteAndLogError(w, schemas.Unauthorized, http.StatusUnauthorized, errors.New("invalid token"))
+		return
+	}
+
+	// Generate token pair
+	tokenDto, err := generateTokenPair(handler, userId, username)
+	if err != nil {
+		utils.WriteAndLogError(w, schemas.InternalServerError, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Send success response
+	utils.WriteAndLogResponse(w, tokenDto, http.StatusOK)
 }
 
 // retrieveUserIdAndEmail retrieves the user ID and email of the user specified by the username.

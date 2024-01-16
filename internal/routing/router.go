@@ -93,6 +93,7 @@ func userRouter(databaseMgr *managers.DatabaseMgr, jwtMgr *managers.JWTMgr, mail
 		r.Put("/", userHdl.ChangeTrivialInformation)
 		r.Patch("/", userHdl.ChangePassword)
 		r.Post("/login", userHdl.LoginUser)
+		r.Post("/refresh", userHdl.RefreshToken)
 		r.Post("/{username}/activate", userHdl.ActivateUser)
 		r.Delete("/{username}/activate", userHdl.ResendToken)
 	}

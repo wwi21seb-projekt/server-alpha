@@ -152,3 +152,9 @@ type ChangePasswordRequest struct {
 	OldPassword string `json:"oldPassword" validate:"required,min=8,password_validation"`
 	NewPassword string `json:"newPassword" validate:"required,min=8,password_validation"`
 }
+
+// RefreshTokenRequest is a struct that represents a RefreshToken request
+// RefreshToken is required and must be a valid refresh token
+type RefreshTokenRequest struct {
+	RefreshToken string `json:"refreshToken" validate:"required"`
+}
