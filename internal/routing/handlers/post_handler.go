@@ -40,6 +40,7 @@ func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 	// Begin a new transaction
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
 	if tx == nil || transactionCtx == nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, nil)
 		return
 	}
 	var err error
@@ -124,6 +125,7 @@ func (handler *PostHandler) HandleGetFeedRequest(w http.ResponseWriter, r *http.
 	// Begin a new transaction
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
 	if tx == nil || transactionCtx == nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, nil)
 		return
 	}
 	var err error

@@ -103,7 +103,7 @@ func (handler *UserHandler) RegisterUser(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Generate a token for the user
-	if err = generateAndSendToken(w, handler, tx, transactionCtx, registrationRequest.Email, registrationRequest.Username, userId.String()); err != nil {
+	if err = generateAndSendToken(transactionCtx, w, handler, tx, registrationRequest.Email, registrationRequest.Username, userId.String()); err != nil {
 		return
 	}
 
@@ -180,7 +180,7 @@ func (handler *UserHandler) ActivateUser(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Generate token pair
-	tokenDto, err := generateTokenPair(handler.JWTManager, userID.String(), username)
+	tokenDto, err := generateTokenPair(handler, userID.String(), username)
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.InternalServerError, http.StatusInternalServerError, err)
 		return
@@ -220,7 +220,7 @@ func (handler *UserHandler) ResendToken(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Generate a new token and send it to the user
-	if err := generateAndSendToken(w, handler, tx, transactionCtx, email, username, userId.String()); err != nil {
+	if err := generateAndSendToken(transactionCtx, w, handler, tx, email, username, userId.String()); err != nil {
 		return
 	}
 
@@ -388,7 +388,7 @@ func (handler *UserHandler) LoginUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate token pair
-	tokenDto, err := generateTokenPair(handler.JWTManager, userId.String(), loginRequest.Username)
+	tokenDto, err := generateTokenPair(handler, userId.String(), loginRequest.Username)
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.InternalServerError, http.StatusInternalServerError, err)
 		return
@@ -813,7 +813,7 @@ func checkUserExistenceAndActivation(ctx context.Context, w http.ResponseWriter,
 }
 
 // generateAndSendToken generates a new token and sends it to the user's email.
-func generateAndSendToken(w http.ResponseWriter, handler *UserHandler, tx pgx.Tx, ctx context.Context, email, username, userId string) error {
+func generateAndSendToken(ctx context.Context, w http.ResponseWriter, handler *UserHandler, tx pgx.Tx, email, username, userId string) error {
 	// Generate a new token and send it to the user
 	token := generateToken()
 	tokenID := uuid.New()
@@ -876,14 +876,14 @@ func checkPassword(transactionCtx context.Context, w http.ResponseWriter, tx pgx
 }
 
 // generateTokenPair generates a token pair for the given user.
-func generateTokenPair(jwtManager managers.JWTMgr, userId, username string) (*schemas.TokenPairDTO, error) {
+func generateTokenPair(handler *UserHandler, userId, username string) (*schemas.TokenPairDTO, error) {
 	// Generate a token for the user
-	token, err := jwtManager.GenerateJWT(userId, username, false)
+	token, err := handler.JWTManager.GenerateJWT(userId, username, false)
 	if err != nil {
 		return nil, err
 	}
 
-	refreshToken, err := jwtManager.GenerateJWT(userId, username, true)
+	refreshToken, err := handler.JWTManager.GenerateJWT(userId, username, true)
 	if err != nil {
 		return nil, err
 	}
