@@ -651,13 +651,24 @@ func (handler *UserHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
 	jwtUserId := claims["sub"].(string)
 	jwtUsername := claims["username"].(string)
 
+	// Check and throw error if the user wants to subscribe to himself
+	if jwtUserId == subscribeeId {
+		utils.WriteAndLogError(w, schemas.SubscriptionSelfFollow, http.StatusNotAcceptable, errors.New("user cannot subscribe to himself"))
+		return
+	}
+
 	// Check and throw error if the user is already subscribed to the user he wants to subscribe to
 	queryString = "SELECT subscription_id FROM alpha_schema.subscriptions WHERE subscriber_id = $1 AND subscribee_id = $2"
 	rows := tx.QueryRow(transactionCtx, queryString, jwtUserId, subscribeeId)
 	var subscriptionId uuid.UUID
-	if err := rows.Scan(&subscriptionId); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+	if err := rows.Scan(&subscriptionId); err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			utils.WriteAndLogError(w, schemas.SubscriptionAlreadyExists, http.StatusConflict, err)
+			return
+		}
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
+
 	}
 
 	// Subscribe the user
@@ -709,16 +720,22 @@ func (handler *UserHandler) Unsubscribe(w http.ResponseWriter, r *http.Request) 
 	// Get subscriptionId from path
 	subscriptionId := chi.URLParam(r, utils.SubscriptionIdKey)
 
-	// Get the subscribeeId from the subscriptionId
-	queryString := "SELECT subscribee_id FROM alpha_schema.subscriptions WHERE subscription_id = $1"
+	// Get the subscribeeId and subscriberId from the subscriptionId
+	queryString := "SELECT subscriber_id, subscribee_id FROM alpha_schema.subscriptions WHERE subscription_id = $1"
 	row := tx.QueryRow(transactionCtx, queryString, subscriptionId)
-	var subscribeeId string
-	if err := row.Scan(&subscribeeId); err != nil {
+	var subscriberId, subscribeeId string
+	if err := row.Scan(&subscriberId, &subscribeeId); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			utils.WriteAndLogError(w, schemas.SubscriptionNotFound, http.StatusNotFound, errors.New("subscription not found"))
 			return
 		}
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Check and throw error if user wants to delete someone else's subscription
+	if subscriberId != jwtUserId {
+		utils.WriteAndLogError(w, schemas.UnsubscribeForbidden, http.StatusForbidden, errors.New("you can only delete your own subscriptions"))
 		return
 	}
 
