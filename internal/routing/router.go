@@ -1,6 +1,7 @@
 package routing
 
 import (
+	"github.com/go-chi/cors"
 	"net/http"
 	"server-alpha/internal/managers"
 	"server-alpha/internal/routing/handlers"
@@ -15,11 +16,22 @@ import (
 func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtMgr managers.JWTMgr) *chi.Mux {
 	r := chi.NewRouter()
 
+	// Configure CORS
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins: []string{"http://localhost:5173", "http://localhost:19000"},
+		AllowedMethods: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowedHeaders: []string{"Accept", "Authorization", "Content-Type"},
+		MaxAge:         300,
+	}))
+	// Inject request ID into context
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	// Add logger to middleware stack
 	r.Use(middleware.Logger)
+	// Add recoverer to middleware stack
 	r.Use(middleware.Recoverer)
+	// Set base timeout for all requests to 15 seconds
 	r.Use(middleware.Timeout(15 * time.Second))
+	// Set content type to JSON
 	r.Use(middleware.SetHeader("Content-Type", "application/json"))
 
 	// Initialize handlers
