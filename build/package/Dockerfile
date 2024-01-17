@@ -13,7 +13,7 @@ COPY . .
 RUN go build -o server-alpha ./cmd/server
 
 ## Serve only the compiled binary in the second stage
-FROM alpine:3.17.6 AS serve
+FROM alpine:3.19.0 AS serve
 
 # Add a non-root user and group
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
