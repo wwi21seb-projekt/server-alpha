@@ -661,9 +661,14 @@ func (handler *UserHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
 	queryString = "SELECT subscription_id FROM alpha_schema.subscriptions WHERE subscriber_id = $1 AND subscribee_id = $2"
 	rows := tx.QueryRow(transactionCtx, queryString, jwtUserId, subscribeeId)
 	var subscriptionId uuid.UUID
-	if err := rows.Scan(&subscriptionId); err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		utils.WriteAndLogError(w, schemas.SubscriptionAlreadyExists, http.StatusConflict, err)
+	if err := rows.Scan(&subscriptionId); err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			utils.WriteAndLogError(w, schemas.SubscriptionAlreadyExists, http.StatusConflict, err)
+			return
+		}
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
+
 	}
 
 	// Subscribe the user
@@ -715,7 +720,7 @@ func (handler *UserHandler) Unsubscribe(w http.ResponseWriter, r *http.Request) 
 	// Get subscriptionId from path
 	subscriptionId := chi.URLParam(r, utils.SubscriptionIdKey)
 
-	// Get the subscribeeId and subscriperId from the subscriptionId
+	// Get the subscribeeId and subscriberId from the subscriptionId
 	queryString := "SELECT subscriber_id, subscribee_id FROM alpha_schema.subscriptions WHERE subscription_id = $1"
 	row := tx.QueryRow(transactionCtx, queryString, subscriptionId)
 	var subscriberId, subscribeeId string
