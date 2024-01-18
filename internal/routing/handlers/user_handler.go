@@ -522,12 +522,14 @@ func (handler *UserHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
 	var subscriptionId uuid.UUID
 	if err := rows.Scan(&subscriptionId); err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
-			utils.WriteAndLogError(w, schemas.SubscriptionAlreadyExists, http.StatusConflict, err)
+			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 			return
 		}
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-		return
+	}
 
+	if subscriptionId != uuid.Nil {
+		utils.WriteAndLogError(w, schemas.SubscriptionAlreadyExists, http.StatusConflict, errors.New("subscription already exists"))
+		return
 	}
 
 	// Subscribe the user
@@ -594,8 +596,8 @@ func (handler *UserHandler) Unsubscribe(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Unsubscribe the user
-	queryString = "DELETE FROM alpha_schema.subscriptions WHERE subscriber_id = $1 AND subscribee_id = $2"
-	if _, err := tx.Exec(transactionCtx, queryString, jwtUserId, subscribeeId); err != nil {
+	queryString = "DELETE FROM alpha_schema.subscriptions WHERE subscription_id = $1"
+	if _, err := tx.Exec(transactionCtx, queryString, subscriptionId); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			utils.WriteAndLogError(w, schemas.SubscriptionNotFound, http.StatusNotFound, errors.New("subscription not found"))
 			return

@@ -147,7 +147,7 @@ func TestUserRegistration(t *testing.T) {
 
 			// Assert that the response status code is 201 and the response body contains the expected values
 			expect := httpexpect.Default(t, server.URL)
-			request := expect.POST("/api/v1/users").WithJSON(tc.user)
+			request := expect.POST("/api/users").WithJSON(tc.user)
 			response := request.Expect().Status(tc.status)
 			response.JSON().IsEqual(tc.responseBody)
 
@@ -210,7 +210,7 @@ func TestUserLogin(t *testing.T) {
 
 			// Assert that the response status code is 200 and the response body contains the expected values
 			expect := httpexpect.Default(t, server.URL)
-			request := expect.POST("/api/v1/users/login").WithJSON(tc.user)
+			request := expect.POST("/api/users/login").WithJSON(tc.user)
 			request.Expect().Status(tc.status)
 
 			if err := poolMock.ExpectationsWereMet(); err != nil {
