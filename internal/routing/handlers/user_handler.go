@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"math/rand"
 	"net/http"
@@ -686,6 +687,8 @@ func (handler *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) 
 		Pagination: paginationDto,
 	}
 
+	sendPaginatedResponse(w, subset, offset, limit, len(users))
+
 	// Send success response
 	utils.WriteAndLogResponse(w, paginatedResponse, http.StatusOK)
 }
@@ -947,8 +950,7 @@ func (handler *UserHandler) RetrieveUserPosts(w http.ResponseWriter, r *http.Req
 	}
 
 	// Retrieve posts from database
-	queryString := "SELECT p.post_id, p.content, p.created_at FROM alpha_schema.posts p JOIN alpha_schema.users u on " +
-		"p.author_id = u.user_id WHERE u.username = $1 ORDER BY p.created_at"
+	queryString := "SELECT p.post_id, p.content, p.created_at FROM alpha_schema.posts p JOIN alpha_schema.users u on p.author_id = u.user_id WHERE u.username = $1 ORDER BY p.created_at"
 	rows, err := handler.DatabaseManager.GetPool().Query(ctx, queryString, username)
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
@@ -965,7 +967,7 @@ func (handler *UserHandler) RetrieveUserPosts(w http.ResponseWriter, r *http.Req
 			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 			return
 		}
-		post.CreatedAt = createdAt.Time.Format(time.RFC3339)
+		post.CreationDate = createdAt.Time.Format(time.RFC3339)
 		posts = append(posts, post)
 	}
 
