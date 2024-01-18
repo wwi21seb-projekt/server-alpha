@@ -74,7 +74,7 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 	})
 
 	// Initialize user routes
-	r.Route("/api/users", userRouter(&databaseMgr, &jwtMgr, &mailMgr))
+	r.Route("/api/users", userRouter(&databaseMgr, jwtMgr, &mailMgr))
 
 	// Initialize feed routes
 	r.Route("/api/feed", func(r chi.Router) {
@@ -97,16 +97,17 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 	return r
 }
 
-func userRouter(databaseMgr *managers.DatabaseMgr, jwtMgr *managers.JWTMgr, mailMgr *managers.MailMgr) func(chi.Router) {
+func userRouter(databaseMgr *managers.DatabaseMgr, jwtMgr managers.JWTMgr, mailMgr *managers.MailMgr) func(chi.Router) {
 	return func(r chi.Router) {
-		userHdl := handlers.NewUserHandler(databaseMgr, jwtMgr, mailMgr)
+		userHdl := handlers.NewUserHandler(databaseMgr, &jwtMgr, mailMgr)
 
 		r.Post("/", userHdl.RegisterUser)
-		r.Put("/", userHdl.ChangeTrivialInformation)
-		r.Patch("/", userHdl.ChangePassword)
+		r.With(jwtMgr.JWTMiddleware).Put("/", userHdl.ChangeTrivialInformation)
+		r.With(jwtMgr.JWTMiddleware).Patch("/", userHdl.ChangePassword)
 		r.Post("/login", userHdl.LoginUser)
 		r.Post("/refresh", userHdl.RefreshToken)
 		r.Post("/{username}/activate", userHdl.ActivateUser)
 		r.Delete("/{username}/activate", userHdl.ResendToken)
+		r.With(jwtMgr.JWTMiddleware).Get("/{username}", userHdl.HandleGetUserRequest)
 	}
 }
