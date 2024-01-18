@@ -6,15 +6,15 @@
 | [Trello Ticket 1]                        | <span style="color:yellow">POST</span>  | `/users/login`                       | Login                      | ✅             |
 | [Trello Ticket 2]                        | <span style="color:green">GET</span>    | `/imprint`                           | Impressum                  | ✅             |
 | [Trello Ticket 3.1], [Trello Ticket 3.2] | <span style="color:yellow">POST</span>  | `/posts`                             | Create Posts               | ✅             |
-| [Trello Ticket 5]                        | <span style="color:green">GET</span>    | `/users/:username`                   | Visit User Profile         | ❌             |
-| [Trello Ticket 4]                        | <span style="color:green">GET</span>    | `/users?username&offset&limit`       | Search User                | ❌             |
+| [Trello Ticket 5]                        | <span style="color:green">GET</span>    | `/users/:username`                   | Visit User Profile         | ✅             |
+| [Trello Ticket 4]                        | <span style="color:green">GET</span>    | `/users?username&offset&limit`       | Search User                | ✅             |
 | [Trello Ticket 4]                        | <span style="color:green">GET</span>    | `/users/:username/feed?offset&limit` | User Feed                  | ❌             |
-| [Trello Ticket 4]                        | <span style="color:yellow">POST</span>  | `/subscriptions`                     | Subscribe User             | ❌             |
-| [Trello Ticket 4]                        | <span style="color:red">DELETE</span>   | `/subscriptions/:subscriptionId`     | Unsubscribe User           | ❌             |
-| [Trello Ticket 6.1]                      | <span style="color:green">GET</span>    | `/feed?postId&limit&feedType`        | Get own or global feed     | ❌             |
-| [Trello Ticket 6.2]                      | <span style="color:green">GET</span>    | `/feed?postId&limit`                 | Get global feed (no auth)  | ❌             |
-| [Trello Ticket 7]                        | <span style="color:blue">PUT</span>     | `/users`                             | Change trivial information | ❌             |
-| [Trello Ticket 7]                        | <span style="color:purple">PATCH</span> | `/users`                             | Change password            | ❌             |
+| [Trello Ticket 4]                        | <span style="color:yellow">POST</span>  | `/subscriptions`                     | Subscribe User             | ✅             |
+| [Trello Ticket 4]                        | <span style="color:red">DELETE</span>   | `/subscriptions/:subscriptionId`     | Unsubscribe User           | ✅             |
+| [Trello Ticket 6.1]                      | <span style="color:green">GET</span>    | `/feed?postId&limit&feedType`        | Get own or global feed     | ✅             |
+| [Trello Ticket 6.2]                      | <span style="color:green">GET</span>    | `/feed?postId&limit`                 | Get global feed (no auth)  | ✅             |
+| [Trello Ticket 7]                        | <span style="color:blue">PUT</span>     | `/users`                             | Change trivial information | ✅             |
+| [Trello Ticket 7]                        | <span style="color:purple">PATCH</span> | `/users`                             | Change password            | ✅             |
 
 [Trello Ticket 1]: https://trello.com/c/1w0QP6u5/209-id-0-als-nutzer-möchte-ich-mich-mit-email-und-passwort-registrieren-können-um-einen-gesicherten-zugang-zu-meinem-account-zu-habe
 

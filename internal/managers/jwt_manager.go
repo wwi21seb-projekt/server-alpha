@@ -17,10 +17,9 @@ import (
 )
 
 type JWTMgr interface {
-	GenerateJWT(claims jwt.Claims) (string, error)
+	GenerateJWT(userId, username string, isRefreshToken bool) (string, error)
 	ValidateJWT(tokenString string) (jwt.Claims, error)
 	JWTMiddleware(next http.Handler) http.Handler
-	GenerateClaims(userId, username string) jwt.Claims
 }
 
 // JWTManager handles JWT generation, signing, and validation.
@@ -41,6 +40,67 @@ func NewJWTManager(privateKey ed25519.PrivateKey, publicKey ed25519.PublicKey) J
 	log.Info("Initialized JWT manager using provided key pair")
 
 	return &JWTManager
+}
+
+// GenerateJWT generates a new JWT with the given claims.
+func (jm *JWTManager) GenerateJWT(userId, username string, isRefreshToken bool) (string, error) {
+	claims := generateClaims(userId, username, isRefreshToken)
+
+	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
+	return token.SignedString(jm.privateKey)
+}
+
+// ValidateJWT validates the given JWT and returns the claims if valid.
+func (jm *JWTManager) ValidateJWT(tokenString string) (jwt.Claims, error) {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		// Verify the signing method
+		if token.Method.Alg() != jwt.SigningMethodEdDSA.Alg() {
+			return nil, fmt.Errorf("invalid signing method")
+		}
+
+		return jm.publicKey, nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	if !token.Valid {
+		return nil, jwt.ErrSignatureInvalid
+	}
+
+	return token.Claims, nil
+}
+
+// JWTMiddleware is a middleware that validates the JWT token in the request header.
+func (jm *JWTManager) JWTMiddleware(next http.Handler) http.Handler {
+	fn := func(w http.ResponseWriter, r *http.Request) {
+		// Check if the request has a JWT token
+		if r.Header.Get("Authorization") == "" {
+			utils.WriteAndLogError(w, schemas.Unauthorized, http.StatusUnauthorized, fmt.Errorf("missing authorization header"))
+			return
+		}
+
+		// Extract the JWT token from the request header
+		header := r.Header.Get("Authorization")
+		token := header[len("Bearer "):]
+
+		// Validate the JWT token
+		claims, err := jm.ValidateJWT(token)
+		if err != nil || claims.(jwt.MapClaims)["refresh"] == "true" {
+			utils.WriteAndLogError(w, schemas.Unauthorized, http.StatusUnauthorized, err)
+			return
+		}
+
+		// Add the claims to the request context
+		ctx := r.Context()
+		ctx = context.WithValue(ctx, utils.ClaimsKey, claims)
+		r = r.WithContext(ctx)
+
+		next.ServeHTTP(w, r)
+	}
+
+	return http.HandlerFunc(fn)
 }
 
 func NewJWTManagerFromFile() (JWTMgr, error) {
@@ -201,70 +261,24 @@ func generateAndStoreKeys(privateKeyPath, publicKeyPath string) error {
 }
 
 // GenerateClaims generates the standard JWT claims.
-func (jm *JWTManager) GenerateClaims(userId, username string) jwt.Claims {
+func generateClaims(userId, username string, isRefreshToken bool) jwt.Claims {
+	var exp int64
+	var refresh string
+
+	if isRefreshToken {
+		exp = time.Now().Add(time.Hour * 24 * 7).Unix()
+		refresh = "true"
+	} else {
+		exp = time.Now().Add(time.Hour * 24).Unix()
+		refresh = "false"
+	}
+
 	return jwt.MapClaims{
 		"iss":      "server-alpha.tech",
 		"iat":      time.Now().Unix(),
-		"exp":      time.Now().Add(time.Hour * 24).Unix(),
+		"exp":      exp,
 		"sub":      userId,
 		"username": username,
+		"refresh":  refresh,
 	}
-}
-
-// GenerateJWT generates a new JWT with the given claims.
-func (jm *JWTManager) GenerateJWT(claims jwt.Claims) (string, error) {
-	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
-	return token.SignedString(jm.privateKey)
-}
-
-// ValidateJWT validates the given JWT and returns the claims if valid.
-func (jm *JWTManager) ValidateJWT(tokenString string) (jwt.Claims, error) {
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		// Verify the signing method
-		if token.Method.Alg() != jwt.SigningMethodEdDSA.Alg() {
-			return nil, fmt.Errorf("invalid signing method")
-		}
-
-		return jm.publicKey, nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	if !token.Valid {
-		return nil, jwt.ErrSignatureInvalid
-	}
-
-	return token.Claims, nil
-}
-
-func (jm *JWTManager) JWTMiddleware(next http.Handler) http.Handler {
-	fn := func(w http.ResponseWriter, r *http.Request) {
-		// Check if the request has a JWT token
-		if r.Header.Get("Authorization") == "" {
-			utils.WriteAndLogError(w, schemas.Unauthorized, http.StatusUnauthorized, fmt.Errorf("missing authorization header"))
-			return
-		}
-
-		// Extract the JWT token from the request header
-		header := r.Header.Get("Authorization")
-		token := header[len("Bearer "):]
-
-		// Validate the JWT token
-		claims, err := jm.ValidateJWT(token)
-		if err != nil {
-			utils.WriteAndLogError(w, schemas.Unauthorized, http.StatusUnauthorized, err)
-			return
-		}
-
-		// Add the claims to the request context
-		ctx := r.Context()
-		ctx = context.WithValue(ctx, utils.ClaimsKey, claims)
-		r = r.WithContext(ctx)
-
-		next.ServeHTTP(w, r)
-	}
-
-	return http.HandlerFunc(fn)
 }

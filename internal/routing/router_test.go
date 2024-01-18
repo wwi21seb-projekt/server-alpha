@@ -147,7 +147,7 @@ func TestUserRegistration(t *testing.T) {
 
 			// Assert that the response status code is 201 and the response body contains the expected values
 			expect := httpexpect.Default(t, server.URL)
-			request := expect.POST("/api/v1/users").WithJSON(tc.user)
+			request := expect.POST("/api/users").WithJSON(tc.user)
 			response := request.Expect().Status(tc.status)
 			response.JSON().IsEqual(tc.responseBody)
 
@@ -206,10 +206,11 @@ func TestUserLogin(t *testing.T) {
 			poolMock.ExpectQuery("SELECT activated_at").WithArgs(tc.user.Username).WillReturnRows(pgxmock.NewRows([]string{"activated_at"}).AddRow("2006-01-02 15:04:05.999999999Z"))
 			poolMock.ExpectQuery("SELECT password, user_id").WithArgs(tc.user.Username).WillReturnRows(pgxmock.NewRows([]string{"password", "user_id"}).AddRow(tc.user.HashedPassword, tc.user.UserId))
 			poolMock.ExpectQuery("SELECT email, user_id").WithArgs(tc.user.Username).WillReturnRows(pgxmock.NewRows([]string{"email", "user_id"}).AddRow(tc.user.Email, tc.user.UserId))
+			poolMock.ExpectCommit()
 
 			// Assert that the response status code is 200 and the response body contains the expected values
 			expect := httpexpect.Default(t, server.URL)
-			request := expect.POST("/api/v1/users/login").WithJSON(tc.user)
+			request := expect.POST("/api/users/login").WithJSON(tc.user)
 			request.Expect().Status(tc.status)
 
 			if err := poolMock.ExpectationsWereMet(); err != nil {

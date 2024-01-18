@@ -1,9 +1,11 @@
 package utils
 
 const (
-	SubscriptionIdKey = "subscription_id"
+	SubscriptionIdKey = "subscriptionId"
 	UsernameKey       = "username"
 	UsernameParamKey  = "username"
 	OffsetParamKey    = "offset"
 	LimitParamKey     = "limit"
+	PostIdParamKey    = "postId"
+	FeedTypeParamKey  = "feedType"
 )

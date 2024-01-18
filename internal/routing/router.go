@@ -1,6 +1,7 @@
 package routing
 
 import (
+	"github.com/go-chi/cors"
 	"net/http"
 	"server-alpha/internal/managers"
 	"server-alpha/internal/routing/handlers"
@@ -15,15 +16,26 @@ import (
 func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtMgr managers.JWTMgr) *chi.Mux {
 	r := chi.NewRouter()
 
+	// Configure CORS
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins: []string{"http://localhost:5173", "http://localhost:19000"},
+		AllowedMethods: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowedHeaders: []string{"Accept", "Authorization", "Content-Type"},
+		MaxAge:         300,
+	}))
+	// Inject request ID into context
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	// Add logger to middleware stack
 	r.Use(middleware.Logger)
+	// Add recoverer to middleware stack
 	r.Use(middleware.Recoverer)
+	// Set base timeout for all requests to 15 seconds
 	r.Use(middleware.Timeout(15 * time.Second))
+	// Set content type to JSON
 	r.Use(middleware.SetHeader("Content-Type", "application/json"))
 
 	// Initialize handlers
-	postHdl := handlers.NewPostHandler(&databaseMgr)
+	postHdl := handlers.NewPostHandler(&databaseMgr, &jwtMgr)
 
 	// Initialize user handlers
 	userHdl := handlers.NewUserHandler(&databaseMgr, &jwtMgr, &mailMgr)
@@ -40,7 +52,7 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 		w.WriteHeader(http.StatusOK)
 	})
 
-	r.Get("/imprint", func(w http.ResponseWriter, r *http.Request) {
+	r.Get("/api/imprint", func(w http.ResponseWriter, r *http.Request) {
 		imprint := "Impressum\n\nEinen Löwen interessiert es nicht, was Schafe über ihn denken.\n\nDiese Webseite " +
 			"wird im Rahmen eines Universitätsprojektes angeboten von:\nKurs WWI21SEB\nDuale Hochschule " +
 			"Baden-Württemberg Mannheim\nCoblitzallee 1 – 9, 68163 Mannheim\n\nKontakt:\nE-Mail: " +
@@ -62,16 +74,21 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 	})
 
 	// Initialize user routes
-	r.Route("/api/v1/users", userRouter(&databaseMgr, &jwtMgr, &mailMgr))
+	r.Route("/api/users", userRouter(&databaseMgr, jwtMgr, &mailMgr))
+
+	// Initialize feed routes
+	r.Route("/api/feed", func(r chi.Router) {
+		r.Get("/", postHdl.HandleGetFeedRequest)
+	})
 
 	// Initialize post routes
-	r.Route("/api/v1/posts", func(r chi.Router) {
+	r.Route("/api/posts", func(r chi.Router) {
 		r.Use(jwtMgr.JWTMiddleware)
 		r.Post("/", postHdl.CreatePost)
 	})
 
 	// Intialize subscription routes
-	r.Route("/api/v1/subscriptions", func(r chi.Router) {
+	r.Route("/api/subscriptions", func(r chi.Router) {
 		r.Use(jwtMgr.JWTMiddleware)
 		r.Post("/", userHdl.Subscribe)
 		r.Delete("/{subscriptionId}", userHdl.Unsubscribe)
@@ -80,16 +97,19 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 	return r
 }
 
-func userRouter(databaseMgr *managers.DatabaseMgr, jwtMgr *managers.JWTMgr, mailMgr *managers.MailMgr) func(chi.Router) {
+func userRouter(databaseMgr *managers.DatabaseMgr, jwtMgr managers.JWTMgr, mailMgr *managers.MailMgr) func(chi.Router) {
 	return func(r chi.Router) {
-		userHdl := handlers.NewUserHandler(databaseMgr, jwtMgr, mailMgr)
+		userHdl := handlers.NewUserHandler(databaseMgr, &jwtMgr, mailMgr)
 
 		r.Post("/", userHdl.RegisterUser)
-		r.Put("/", userHdl.ChangeTrivialInformation)
-		r.Patch("/", userHdl.ChangePassword)
+		r.With(jwtMgr.JWTMiddleware).Get("/", userHdl.SearchUsers)
+		r.With(jwtMgr.JWTMiddleware).Put("/", userHdl.ChangeTrivialInformation)
+		r.With(jwtMgr.JWTMiddleware).Patch("/", userHdl.ChangePassword)
 		r.Post("/login", userHdl.LoginUser)
+		r.Post("/refresh", userHdl.RefreshToken)
 		r.Post("/{username}/activate", userHdl.ActivateUser)
 		r.Delete("/{username}/activate", userHdl.ResendToken)
+		r.With(jwtMgr.JWTMiddleware).Get("/{username}", userHdl.HandleGetUserRequest)
 		r.Get("/{username}/feed", userHdl.RetrieveUserPosts)
 	}
 }

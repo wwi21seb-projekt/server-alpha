@@ -32,10 +32,12 @@ type UserNicknameAndStatusDTO struct {
 	Status   string `json:"status"`
 }
 
-// TokenDTO is a struct that represents a token response
-// Token is the JWT token
-type TokenDTO struct {
-	Token string `json:"token"`
+// TokenPairDTO is a struct that represents a token response
+// Token is the main JWT token used for auth
+// RefreshToken is the refresh token used to get a new token
+type TokenPairDTO struct {
+	Token        string `json:"token"`
+	RefreshToken string `json:"refreshToken"`
 }
 
 // AuthorDTO is a struct that represents an author response
@@ -45,7 +47,7 @@ type TokenDTO struct {
 type AuthorDTO struct {
 	Username          string `json:"username"`
 	Nickname          string `json:"nickname"`
-	ProfilePictureURL string `json:"profile_picture_url"`
+	ProfilePictureURL string `json:"profilePictureURL"`
 }
 
 // PostDTO is a struct that represents a post response
@@ -54,10 +56,10 @@ type AuthorDTO struct {
 // Content is the content of the post
 // CreatedAt is the timestamp of when the post was created
 type PostDTO struct {
-	PostId    string    `json:"post_id"`
-	Author    AuthorDTO `json:"author"`
-	Content   string    `json:"content"`
-	CreatedAt string    `json:"created_at"`
+	PostId       string    `json:"postId"`
+	Author       AuthorDTO `json:"author"`
+	CreationDate string    `json:"creationDate"`
+	Content      string    `json:"content"`
 }
 
 /** 				**/
@@ -120,13 +122,19 @@ type SubscriptionDTO struct {
 
 type PaginatedResponse struct {
 	Records    interface{} `json:"records"`
-	Pagination Pagination  `json:"pagination"`
+	Pagination interface{} `json:"pagination"`
 }
 
 type Pagination struct {
 	Offset  int `json:"offset"`
 	Limit   int `json:"limit"`
 	Records int `json:"records"`
+}
+
+type PostPagination struct {
+	LastPostId string `json:"lastPostId"`
+	Limit      string `json:"limit"`
+	Records    int    `json:"records"`
 }
 
 // ChangeTrivialInformationRequest is a struct that represents a NicknameChange request
@@ -143,4 +151,10 @@ type ChangeTrivialInformationRequest struct {
 type ChangePasswordRequest struct {
 	OldPassword string `json:"oldPassword" validate:"required,min=8,password_validation"`
 	NewPassword string `json:"newPassword" validate:"required,min=8,password_validation"`
+}
+
+// RefreshTokenRequest is a struct that represents a RefreshToken request
+// RefreshToken is required and must be a valid refresh token
+type RefreshTokenRequest struct {
+	RefreshToken string `json:"refreshToken" validate:"required"`
 }

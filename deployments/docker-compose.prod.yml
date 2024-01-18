@@ -22,6 +22,7 @@ services:
 
   app:
     image: "${SERVER_IMAGE:-ghcr.io/wwi21seb-projekt/server-alpha:main}" # It's possible to specify the image to use in the environment, default is the latest image from the github container registry
+    user: ${UID}:${GID}
     restart: unless-stopped # Restart the container unless it was stopped by the user
     depends_on:
       - db
@@ -34,18 +35,19 @@ services:
       - DB_NAME=${DB_NAME}
       - DB_USER=${DB_USER}
       - DB_PASS=${DB_PASS}
-      - JWT_PRIVATE_KEY=${JWT_PRIVATE_KEY}
-      - JWT_PUBLIC_KEY=${JWT_PUBLIC_KEY}
       - MAILGUN_API_KEY=${MAILGUN_API_KEY}
     ports:
       - "${APP_PORT}:8080"
+    volumes:
+      - ${PWD}/private_key.pem:/private_key.pem
+      - ${PWD}/public_key.pem:/public_key.pem
     networks:
       - traefik_proxy
       - default
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.alpha.entrypoints=websecure"
-      - "traefik.http.routers.alpha.rule=Host(`alpha.c930.net`)"
+      - "traefik.http.routers.alpha.rule=Host(`server-alpha.tech`)"
       - "traefik.http.routers.alpha.tls=true"
       - "traefik.http.routers.alpha.tls.certresolver=default"
       - "traefik.http.routers.alpha.middlewares=secHeaders@file"
