@@ -6,6 +6,7 @@ import (
 	"errors"
 	"math/rand"
 	"net/http"
+	"reflect"
 	"strconv"
 	"time"
 
@@ -657,40 +658,7 @@ func (handler *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) 
 		users = append(users, user)
 	}
 
-	// get the number of records
-	records := len(users)
-
-	// Pre-checks on offset and limit
-	if offset > records {
-		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("offset invalid"))
-		return
-	}
-	end := offset + limit
-	if end > records {
-		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("limit invalid"))
-		return
-	}
-
-	// Get the subset
-	subset := users[offset:end]
-
-	// Create Pagination DTO
-	paginationDto := schemas.Pagination{
-		Offset:  offset,
-		Limit:   limit,
-		Records: records,
-	}
-
-	// Create Paginated Response
-	paginatedResponse := schemas.PaginatedResponse{
-		Records:    subset,
-		Pagination: paginationDto,
-	}
-
-	sendPaginatedResponse(w, subset, offset, limit, len(users))
-
-	// Send success response
-	utils.WriteAndLogResponse(w, paginatedResponse, http.StatusOK)
+	sendPaginatedResponse(w, users, offset, limit, len(users))
 }
 
 // RefreshToken refreshes the token pair of the user.
@@ -1008,8 +976,24 @@ func sendPaginatedResponse(w http.ResponseWriter, records interface{}, offset, l
 		end = totalRecords
 	}
 
-	// Get the subset
-	subset := records.([]interface{})[offset:end]
+	// Get a reflect.Value of records.
+	v := reflect.ValueOf(records)
+
+	// Check if v is not a slice.
+	if v.Kind() != reflect.Slice {
+		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("records not a valid list"))
+		return
+	}
+
+	var subset interface{}
+	// subset only if records is not empty
+	if v.Len() > 0 {
+		// Use reflect's slice method to get a subset of records.
+		subset = v.Slice(offset, end).Interface()
+	} else {
+		// If the records slice was empty, subset is an empty slice too
+		subset = records
+	}
 
 	// Create Pagination DTO
 	paginationDto := schemas.Pagination{
