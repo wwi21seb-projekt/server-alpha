@@ -878,7 +878,7 @@ func parsePaginationParams(r *http.Request) (int, int, error) {
 	return offset, limit, nil
 }
 
-func sendPaginatedResponse(w http.ResponseWriter, records interface{}, offset int, limit int, totalRecords int) {
+func sendPaginatedResponse(w http.ResponseWriter, records interface{}, offset, limit, totalRecords int) {
 
 	if offset > totalRecords {
 		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("offset invalid"))
