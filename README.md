@@ -1,6 +1,34 @@
 # Server-Alpha
 Server Repository for the Alpha Group (1)
 
+# Status Badges
+
+CI and CD status badges for the main branch:
+
+[![Continuous Integration](https://github.com/wwi21seb-projekt/server-alpha/actions/workflows/ci.yaml/badge.svg)](https://github.com/wwi21seb-projekt/server-alpha/actions/workflows/ci.yaml)
+[![Continuous Delivery](https://github.com/wwi21seb-projekt/server-alpha/actions/workflows/cd.yaml/badge.svg)](https://github.com/wwi21seb-projekt/server-alpha/actions/workflows/cd.yaml)
+
+DeepSource status badges for the main branch:
+
+[![DeepSource](https://app.deepsource.com/gh/wwi21seb-projekt/server-alpha.svg/?label=active+issues&show_trend=true&token=mcwBM2kkvsdD-hJRi0y1quuC)](https://app.deepsource.com/gh/wwi21seb-projekt/server-alpha/)
+[![DeepSource](https://app.deepsource.com/gh/wwi21seb-projekt/server-alpha.svg/?label=resolved+issues&show_trend=true&token=mcwBM2kkvsdD-hJRi0y1quuC)](https://app.deepsource.com/gh/wwi21seb-projekt/server-alpha/)
+
+SonarCloud status badges for the main branch:
+
+[![Quality gate](https://sonarcloud.io/api/project_badges/quality_gate?project=wwi21seb-projekt_server-alpha)](https://sonarcloud.io/summary/new_code?id=wwi21seb-projekt_server-alpha)
+
+[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=wwi21seb-projekt_server-alpha&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=wwi21seb-projekt_server-alpha)
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=wwi21seb-projekt_server-alpha&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=wwi21seb-projekt_server-alpha)
+[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=wwi21seb-projekt_server-alpha&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=wwi21seb-projekt_server-alpha)
+
+[![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=wwi21seb-projekt_server-alpha&metric=code_smells)](https://sonarcloud.io/summary/new_code?id=wwi21seb-projekt_server-alpha)
+[![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=wwi21seb-projekt_server-alpha&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=wwi21seb-projekt_server-alpha)
+[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=wwi21seb-projekt_server-alpha&metric=bugs)](https://sonarcloud.io/summary/new_code?id=wwi21seb-projekt_server-alpha)
+
+[![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=wwi21seb-projekt_server-alpha&metric=sqale_index)](https://sonarcloud.io/summary/new_code?id=wwi21seb-projekt_server-alpha)
+[![Lines of Code](https://sonarcloud.io/api/project_badges/measure?project=wwi21seb-projekt_server-alpha&metric=ncloc)](https://sonarcloud.io/summary/new_code?id=wwi21seb-projekt_server-alpha)
+[![Duplicated Lines (%)](https://sonarcloud.io/api/project_badges/measure?project=wwi21seb-projekt_server-alpha&metric=duplicated_lines_density)](https://sonarcloud.io/summary/new_code?id=wwi21seb-projekt_server-alpha)
+
 ## Prerequisites
 
 - [Docker](https://www.docker.com)
@@ -85,45 +113,3 @@ The service can be configured via environment variables. The following variables
 | `JWT_PUBLIC_KEY`  | The public key for JWT verification. | `secret`                                     |
 | `MAILGUN_API_KEY` | The API key for Mailgun.             | `secret`                                     |
 | `SERVER_IMAGE`    | The image of the server.             | `ghcr.io/wwi21seb-projekt/server-alpha:main` |
-
-
-# Verbesserungsvorschläge/Änderungen
-
-## 1 User
-
-- [ ] **ALLE** API Ressourcen umbenennen (z.B. `users` -> `user`)
-
-### Subscriptions
-- [ ] `GET /users/:user/subscribers` -> Alle Subscriber, die dem User mit der ID `:user` folgen
-
-- [ ] `GET /users/:user/subscriptions` -> Alle User, den der User mit der ID `:user` folgt
-- [ ] `POST /users/:user/subscriptions` -> User mit der ID `:user` abonnieren
-- [ ] `DELETE /users/:user/subscriptions` -> User mit der ID `:user` nicht mehr abonnieren
-
-## 2 Posts
-- [ ] `POST   /posts/` -> Post erstellen
-- [ ] `GET    /posts/:postid` -> Post mit der ID `:postid`
-- [ ] `PUT    /posts/:postid` -> Post mit der ID `:postid` aktualisieren
-- [ ] `DELETE /posts/:postid` -> Post mit der ID `:postid` löschen
-
-### 2.1 Feed
-- [ ] `GET /feed/private` -> Privater Feed des Users
-- [ ] `GET /feed/public` -> Öffentlicher Feed von allen Posts
-
-
-### 2.2 Comments
-- [ ] `GET /posts/:postid/comments` -> Alle Kommentare zu Post mit der ID `:postid`
-- [ ] `POST /posts/:postid/comments` -> Kommentar zu Post mit der ID `:postid` hinzufügen
-- [ ] `GET /posts/:postid/comments/:commentid` -> Kommentar mit der ID `:commentid` abrufen
-- [ ] `PUT /posts/:postid/comments/:commentid` -> Kommentar mit der ID `:commentid` aktualisieren
-- [ ] `DELETE /posts/:postid/comments/:commentid` -> Kommentar mit der ID `:commentid` löschen
-
-### 2.3 Likes
-- Posts
-  - [ ] `GET /posts/:postid/likes` -> Alle Likes zu Post mit der ID `:postid` (Gibt eine Liste mit Usern zurück)
-  - [ ] `POST /posts/:postid/likes` -> Like zu Post mit der ID `:postid` hinzufügen
-  - [ ] `DELETE /posts/:postid/likes` -> Like zu Post mit der ID `:postid` entfernen
-- Comments
-  - [ ] `GET /posts/:postid/comments/:commentid/likes` -> Alle Likes zu Kommentar mit der ID `:commentid` (Gibt eine Liste mit Usern zurück)
-  - [ ] `POST /posts/:postid/comments/:commentid/likes` -> Like zu Kommentar mit der ID `:commentid` hinzufügen
-  - [ ] `DELETE /posts/:postid/comments/:commentid/likes` -> Like zu Kommentar mit der ID `:commentid` entfernen

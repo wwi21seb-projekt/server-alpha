@@ -212,13 +212,13 @@ func retrieveFeed(ctx context.Context, tx pgx.Tx, w http.ResponseWriter, r *http
 	if !publicFeedWanted {
 		userId = claims.(jwt.MapClaims)["sub"].(string)
 		countQuery = `SELECT COUNT(*) FROM alpha_schema.posts
-    					INNER JOIN alpha_schema.users ON author_id = user_id
-    					INNER JOIN alpha_schema.subscriptions ON user_id = subscriptions.subscriber_id
+    					INNER JOIN alpha_schema.subscriptions ON posts.author_id = subscriptions.subscribee_id
+    					INNER JOIN alpha_schema.users ON posts.author_id = users.user_id    					
     					WHERE subscriptions.subscriber_id` + fmt.Sprintf(" = $%d", currentCountQueryIndex)
 		currentCountQueryIndex++
 		dataQuery = `SELECT post_id, username, nickname, profile_picture_url, content, posts.created_at FROM alpha_schema.posts
-					INNER JOIN alpha_schema.users ON author_id = user_id
-					INNER JOIN alpha_schema.subscriptions ON user_id = subscriptions.subscriber_id
+					INNER JOIN alpha_schema.subscriptions ON posts.author_id = subscriptions.subscribee_id
+    				INNER JOIN alpha_schema.users ON posts.author_id = users.user_id				
 					WHERE subscriptions.subscriber_id` + fmt.Sprintf(" = $%d", currentDataQueryIndex)
 		currentDataQueryIndex++
 

@@ -504,6 +504,7 @@ func (handler *UserHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
 			utils.WriteAndLogError(w, schemas.UserNotFound, http.StatusNotFound, err)
 			return
 		}
+
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
@@ -523,6 +524,7 @@ func (handler *UserHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
 	queryString = "SELECT subscription_id FROM alpha_schema.subscriptions WHERE subscriber_id = $1 AND subscribee_id = $2"
 	rows := tx.QueryRow(transactionCtx, queryString, jwtUserId, subscribeeId)
 	var subscriptionId uuid.UUID
+
 	if err := rows.Scan(&subscriptionId); err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
 			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
@@ -531,6 +533,7 @@ func (handler *UserHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if subscriptionId != uuid.Nil {
+		// User is already subscribed, since the subscriptionId is not nil
 		utils.WriteAndLogError(w, schemas.SubscriptionAlreadyExists, http.StatusConflict, errors.New("subscription already exists"))
 		return
 	}
@@ -965,7 +968,6 @@ func parsePaginationParams(r *http.Request) (int, int, error) {
 }
 
 func sendPaginatedResponse(w http.ResponseWriter, records interface{}, offset, limit, totalRecords int) {
-
 	if offset > totalRecords {
 		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("offset invalid"))
 		return
