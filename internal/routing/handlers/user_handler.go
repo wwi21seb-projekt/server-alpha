@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"math/rand"
 	"net/http"
@@ -34,6 +35,7 @@ type UserHdl interface {
 	ChangeTrivialInformation(w http.ResponseWriter, r *http.Request)
 	ChangePassword(w http.ResponseWriter, r *http.Request)
 	RefreshToken(w http.ResponseWriter, r *http.Request)
+	RetrieveUserPosts(w http.ResponseWriter, r *http.Request)
 }
 
 type UserHandler struct {
@@ -628,25 +630,9 @@ func (handler *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) 
 	// Get the search query from the query parameters
 	searchQuery := r.URL.Query().Get(utils.UsernameParamKey)
 
-	// Get the offset from the query parameters
-	offsetString := r.URL.Query().Get(utils.OffsetParamKey)
-	if offsetString == "" {
-		offsetString = "0"
-	}
-	offset, err := strconv.Atoi(offsetString)
+	offset, limit, err := parsePaginationParams(r)
 	if err != nil {
-		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("offset invalid"))
-		return
-	}
-
-	// Get the limit from the query parameters
-	limitString := r.URL.Query().Get(utils.LimitParamKey)
-	if limitString == "" {
-		limitString = "10"
-	}
-	limit, err := strconv.Atoi(limitString)
-	if err != nil {
-		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("limit invalid"))
+		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, err)
 		return
 	}
 
@@ -700,6 +686,8 @@ func (handler *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) 
 		Records:    subset,
 		Pagination: paginationDto,
 	}
+
+	sendPaginatedResponse(w, subset, offset, limit, len(users))
 
 	// Send success response
 	utils.WriteAndLogResponse(w, paginatedResponse, http.StatusOK)
@@ -940,4 +928,106 @@ func generateTokenPair(handler *UserHandler, userId, username string) (*schemas.
 	}
 
 	return tokenPair, nil
+}
+
+func (handler *UserHandler) RetrieveUserPosts(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithDeadline(r.Context(), time.Now().Add(10*time.Second))
+	defer func() {
+		if err := ctx.Err(); err != nil {
+			log.Debug("Context error: ", err)
+		}
+		cancel()
+		log.Debug("Context canceled")
+	}()
+
+	// Get the username from URL parameter
+	username := chi.URLParam(r, utils.UsernameKey)
+
+	offset, limit, err := parsePaginationParams(r)
+	if err != nil {
+		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, err)
+		return
+	}
+
+	// Retrieve posts from database
+	queryString := "SELECT p.post_id, p.content, p.created_at FROM alpha_schema.posts p JOIN alpha_schema.users u on p.author_id = u.user_id WHERE u.username = $1 ORDER BY p.created_at"
+	rows, err := handler.DatabaseManager.GetPool().Query(ctx, queryString, username)
+	if err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+	defer rows.Close()
+
+	// Create a list of posts
+	posts := make([]schemas.PostDTO, 0)
+	var createdAt pgtype.Timestamptz
+	for rows.Next() {
+		post := schemas.PostDTO{}
+		if err := rows.Scan(&post.PostId, &post.Content, &createdAt); err != nil {
+			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+			return
+		}
+		post.CreationDate = createdAt.Time.Format(time.RFC3339)
+		posts = append(posts, post)
+	}
+
+	sendPaginatedResponse(w, posts, offset, limit, len(posts))
+}
+
+func parsePaginationParams(r *http.Request) (int, int, error) {
+	offsetString := r.URL.Query().Get(utils.OffsetParamKey)
+	if offsetString == "" {
+		offsetString = "0"
+	}
+	offset, err := strconv.Atoi(offsetString)
+	if err != nil {
+		return 0, 0, errors.New("offset invalid")
+	}
+
+	limitString := r.URL.Query().Get(utils.LimitParamKey)
+	if limitString == "" {
+		limitString = "10"
+	}
+	limit, err := strconv.Atoi(limitString)
+	if err != nil {
+		return 0, 0, errors.New("limit invalid")
+	}
+
+	return offset, limit, nil
+}
+
+func sendPaginatedResponse(w http.ResponseWriter, records interface{}, offset, limit, totalRecords int) {
+
+	if offset > totalRecords {
+		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("offset invalid"))
+		return
+	}
+
+	end := offset + limit
+	if end > totalRecords {
+		end = totalRecords
+	}
+
+	// Get the subset
+	subset := records.([]interface{})[offset:end]
+
+	// Create Pagination DTO
+	paginationDto := schemas.Pagination{
+		Offset:  offset,
+		Limit:   limit,
+		Records: totalRecords,
+	}
+
+	// Create Paginated Response
+	paginatedResponse := schemas.PaginatedResponse{
+		Records:    subset,
+		Pagination: paginationDto,
+	}
+
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(paginatedResponse); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		utils.WriteAndLogError(w, schemas.InternalServerError, http.StatusInternalServerError, err)
+		return
+	}
 }

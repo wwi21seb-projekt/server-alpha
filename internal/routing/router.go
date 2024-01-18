@@ -110,5 +110,6 @@ func userRouter(databaseMgr *managers.DatabaseMgr, jwtMgr managers.JWTMgr, mailM
 		r.Post("/{username}/activate", userHdl.ActivateUser)
 		r.Delete("/{username}/activate", userHdl.ResendToken)
 		r.With(jwtMgr.JWTMiddleware).Get("/{username}", userHdl.HandleGetUserRequest)
+		r.Get("/{username}/feed", userHdl.RetrieveUserPosts)
 	}
 }
