@@ -756,7 +756,11 @@ func (handler *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) 
 	// Get the search query from the query parameters
 	searchQuery := r.URL.Query().Get(utils.UsernameParamKey)
 
-	offset, limit, err := handler.parsePaginationParams(r)
+	offset, limit, err := parsePaginationParams(r)
+	if err != nil {
+		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, err)
+		return
+	}
 
 	// Get the users that match the search query
 	queryString := "SELECT username, nickname, profile_picture_url, levenshtein(username, $1) as ld FROM alpha_schema.users WHERE levenshtein(username, $1) <= 5 ORDER BY ld"
@@ -779,7 +783,7 @@ func (handler *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) 
 		users = append(users, user)
 	}
 
-	handler.sendPaginatedResponse(w, users, offset, limit, len(users))
+	sendPaginatedResponse(w, users, offset, limit, len(users))
 }
 
 func checkPassword(transactionCtx context.Context, w http.ResponseWriter, tx pgx.Tx, username, givenPassword string) error {
@@ -820,7 +824,11 @@ func (handler *UserHandler) RetrieveUserPosts(w http.ResponseWriter, r *http.Req
 	// Get the username from URL parameter
 	username := chi.URLParam(r, utils.UsernameKey)
 
-	offset, limit, err := handler.parsePaginationParams(r)
+	offset, limit, err := parsePaginationParams(r)
+	if err != nil {
+		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, err)
+		return
+	}
 
 	// Retrieve posts from database
 	queryString := "SELECT p.post_id, p.content, p.created_at FROM alpha_schema.posts p JOIN alpha_schema.users u on " +
@@ -845,10 +853,10 @@ func (handler *UserHandler) RetrieveUserPosts(w http.ResponseWriter, r *http.Req
 		posts = append(posts, post)
 	}
 
-	handler.sendPaginatedResponse(w, posts, offset, limit, len(posts))
+	sendPaginatedResponse(w, posts, offset, limit, len(posts))
 }
 
-func (handler *UserHandler) parsePaginationParams(r *http.Request) (int, int, error) {
+func parsePaginationParams(r *http.Request) (int, int, error) {
 	offsetString := r.URL.Query().Get(utils.OffsetParamKey)
 	if offsetString == "" {
 		offsetString = "0"
@@ -870,7 +878,7 @@ func (handler *UserHandler) parsePaginationParams(r *http.Request) (int, int, er
 	return offset, limit, nil
 }
 
-func (handler *UserHandler) sendPaginatedResponse(w http.ResponseWriter, records interface{}, offset int, limit int, totalRecords int) {
+func sendPaginatedResponse(w http.ResponseWriter, records interface{}, offset int, limit int, totalRecords int) {
 
 	if offset > totalRecords {
 		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("offset invalid"))
