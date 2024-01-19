@@ -158,3 +158,9 @@ type ChangePasswordRequest struct {
 type RefreshTokenRequest struct {
 	RefreshToken string `json:"refreshToken" validate:"required"`
 }
+
+type SubscriptionUserDTO struct {
+	SubscriptionId   uuid.UUID `json:"subscriptionId"`
+	SubscriptionDate string    `json:"subscriptionDate"`
+	User             AuthorDTO `json:"user"`
+}

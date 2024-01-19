@@ -2,11 +2,9 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"math/rand"
 	"net/http"
-	"reflect"
 	"strconv"
 	"time"
 
@@ -30,8 +28,6 @@ type UserHdl interface {
 	ResendToken(w http.ResponseWriter, r *http.Request)
 	LoginUser(w http.ResponseWriter, r *http.Request)
 	HandleGetUserRequest(w http.ResponseWriter, r *http.Request)
-	Subscribe(w http.ResponseWriter, r *http.Request)
-	Unsubscribe(w http.ResponseWriter, r *http.Request)
 	SearchUsers(w http.ResponseWriter, r *http.Request)
 	ChangeTrivialInformation(w http.ResponseWriter, r *http.Request)
 	ChangePassword(w http.ResponseWriter, r *http.Request)
@@ -474,152 +470,6 @@ func (handler *UserHandler) HandleGetUserRequest(w http.ResponseWriter, r *http.
 	utils.WriteAndLogResponse(w, user, http.StatusOK)
 }
 
-// Subscribe creates a new subscription between the current user and the username specified in the request body.
-func (handler *UserHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
-	// Begin a new transaction
-	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
-	if tx == nil || transactionCtx == nil {
-		return
-	}
-	var err error
-	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel, err)
-
-	// Decode the request body into the subscription request struct
-	subscriptionRequest := &schemas.SubscriptionRequest{}
-	if err := utils.DecodeRequestBody(w, r, subscriptionRequest); err != nil {
-		return
-	}
-
-	// Validate the subscription request struct using the validator
-	if err := utils.ValidateStruct(w, subscriptionRequest); err != nil {
-		return
-	}
-
-	// Get subscribeeId from request body
-	queryString := "SELECT user_id FROM alpha_schema.users WHERE username = $1"
-	row := tx.QueryRow(transactionCtx, queryString, subscriptionRequest.Following)
-	var subscribeeId string
-	if err := row.Scan(&subscribeeId); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			utils.WriteAndLogError(w, schemas.UserNotFound, http.StatusNotFound, err)
-			return
-		}
-
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-		return
-	}
-
-	// Get the user ID from the JWT token
-	claims := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
-	jwtUserId := claims["sub"].(string)
-	jwtUsername := claims["username"].(string)
-
-	// Check and throw error if the user wants to subscribe to himself
-	if jwtUserId == subscribeeId {
-		utils.WriteAndLogError(w, schemas.SubscriptionSelfFollow, http.StatusNotAcceptable, errors.New("user cannot subscribe to himself"))
-		return
-	}
-
-	// Check and throw error if the user is already subscribed to the user he wants to subscribe to
-	queryString = "SELECT subscription_id FROM alpha_schema.subscriptions WHERE subscriber_id = $1 AND subscribee_id = $2"
-	rows := tx.QueryRow(transactionCtx, queryString, jwtUserId, subscribeeId)
-	var subscriptionId uuid.UUID
-
-	if err := rows.Scan(&subscriptionId); err != nil {
-		if !errors.Is(err, pgx.ErrNoRows) {
-			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-			return
-		}
-	}
-
-	if subscriptionId != uuid.Nil {
-		// User is already subscribed, since the subscriptionId is not nil
-		utils.WriteAndLogError(w, schemas.SubscriptionAlreadyExists, http.StatusConflict, errors.New("subscription already exists"))
-		return
-	}
-
-	// Subscribe the user
-	queryString = "INSERT INTO alpha_schema.subscriptions (subscription_id, subscriber_id, subscribee_id, created_at) VALUES ($1, $2, $3, $4)"
-	subscriptionId = uuid.New()
-	createdAt := time.Now()
-	if _, err := tx.Exec(transactionCtx, queryString, subscriptionId, jwtUserId, subscribeeId, createdAt); err != nil {
-		log.Errorf("error while inserting subscription: %v", err)
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-		return
-	}
-
-	// Send the subscription to the user
-	subscriptionDto := &schemas.SubscriptionDTO{
-		SubscriptionId:   subscriptionId,
-		SubscriptionDate: createdAt.Format(time.RFC3339),
-		Following:        subscriptionRequest.Following,
-		Follower:         jwtUsername,
-	}
-
-	// Commit the transaction
-	if err := utils.CommitTransaction(w, tx, transactionCtx, cancel); err != nil {
-		return
-	}
-
-	// Send success response
-	utils.WriteAndLogResponse(w, subscriptionDto, http.StatusCreated)
-}
-
-// Unsubscribe removes a subscription between the current user and the user specified by the subscription ID.
-func (handler *UserHandler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
-	// Begin a new transaction
-	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
-	if tx == nil || transactionCtx == nil {
-		return
-	}
-	var err error
-	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel, err)
-
-	// Get the user ID from the JWT token
-	claims := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
-	jwtUserId := claims["sub"].(string)
-
-	// Get subscriptionId from path
-	subscriptionId := chi.URLParam(r, utils.SubscriptionIdKey)
-
-	// Get the subscribeeId and subscriberId from the subscriptionId
-	queryString := "SELECT subscriber_id, subscribee_id FROM alpha_schema.subscriptions WHERE subscription_id = $1"
-	row := tx.QueryRow(transactionCtx, queryString, subscriptionId)
-	var subscriberId, subscribeeId string
-	if err := row.Scan(&subscriberId, &subscribeeId); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			utils.WriteAndLogError(w, schemas.SubscriptionNotFound, http.StatusNotFound, errors.New("subscription not found"))
-			return
-		}
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-		return
-	}
-
-	// Check and throw error if user wants to delete someone else's subscription
-	if subscriberId != jwtUserId {
-		utils.WriteAndLogError(w, schemas.UnsubscribeForbidden, http.StatusForbidden, errors.New("you can only delete your own subscriptions"))
-		return
-	}
-
-	// Unsubscribe the user
-	queryString = "DELETE FROM alpha_schema.subscriptions WHERE subscription_id = $1"
-	if _, err := tx.Exec(transactionCtx, queryString, subscriptionId); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			utils.WriteAndLogError(w, schemas.SubscriptionNotFound, http.StatusNotFound, errors.New("subscription not found"))
-			return
-		}
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-		return
-	}
-
-	// Commit the transaction
-	if err := utils.CommitTransaction(w, tx, transactionCtx, cancel); err != nil {
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
-}
-
 // SearchUsers returns a list of users that match the search query using query parameters using offset and limit.
 func (handler *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithDeadline(r.Context(), time.Now().Add(10*time.Second))
@@ -634,7 +484,7 @@ func (handler *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) 
 	// Get the search query from the query parameters
 	searchQuery := r.URL.Query().Get(utils.UsernameParamKey)
 
-	offset, limit, err := parsePaginationParams(r)
+	offset, limit, err := utils.ParsePaginationParams(r)
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, err)
 		return
@@ -661,7 +511,7 @@ func (handler *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) 
 		users = append(users, user)
 	}
 
-	sendPaginatedResponse(w, users, offset, limit, len(users))
+	utils.SendPaginatedResponse(w, users, offset, limit, len(users))
 }
 
 // RefreshToken refreshes the token pair of the user.
@@ -914,7 +764,7 @@ func (handler *UserHandler) RetrieveUserPosts(w http.ResponseWriter, r *http.Req
 	// Get the username from URL parameter
 	username := chi.URLParam(r, utils.UsernameKey)
 
-	offset, limit, err := parsePaginationParams(r)
+	offset, limit, err := utils.ParsePaginationParams(r)
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, err)
 		return
@@ -942,78 +792,5 @@ func (handler *UserHandler) RetrieveUserPosts(w http.ResponseWriter, r *http.Req
 		posts = append(posts, post)
 	}
 
-	sendPaginatedResponse(w, posts, offset, limit, len(posts))
-}
-
-func parsePaginationParams(r *http.Request) (int, int, error) {
-	offsetString := r.URL.Query().Get(utils.OffsetParamKey)
-	if offsetString == "" {
-		offsetString = "0"
-	}
-	offset, err := strconv.Atoi(offsetString)
-	if err != nil {
-		return 0, 0, errors.New("offset invalid")
-	}
-
-	limitString := r.URL.Query().Get(utils.LimitParamKey)
-	if limitString == "" {
-		limitString = "10"
-	}
-	limit, err := strconv.Atoi(limitString)
-	if err != nil {
-		return 0, 0, errors.New("limit invalid")
-	}
-
-	return offset, limit, nil
-}
-
-func sendPaginatedResponse(w http.ResponseWriter, records interface{}, offset, limit, totalRecords int) {
-	if offset > totalRecords {
-		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("offset invalid"))
-		return
-	}
-
-	end := offset + limit
-	if end > totalRecords {
-		end = totalRecords
-	}
-
-	// Get a reflect.Value of records.
-	v := reflect.ValueOf(records)
-
-	// Check if v is not a slice.
-	if v.Kind() != reflect.Slice {
-		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("records not a valid list"))
-		return
-	}
-
-	var subset interface{}
-	// subset only if records is not empty
-	if v.Len() > 0 {
-		// Use reflect's slice method to get a subset of records.
-		subset = v.Slice(offset, end).Interface()
-	} else {
-		// If the records slice was empty, subset is an empty slice too
-		subset = records
-	}
-
-	// Create Pagination DTO
-	paginationDto := schemas.Pagination{
-		Offset:  offset,
-		Limit:   limit,
-		Records: totalRecords,
-	}
-
-	// Create Paginated Response
-	paginatedResponse := schemas.PaginatedResponse{
-		Records:    subset,
-		Pagination: paginationDto,
-	}
-
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(paginatedResponse); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		utils.WriteAndLogError(w, schemas.InternalServerError, http.StatusInternalServerError, err)
-		return
-	}
+	utils.SendPaginatedResponse(w, posts, offset, limit, len(posts))
 }
