@@ -16,7 +16,11 @@ func ParsePaginationParams(r *http.Request) (int, int, error) {
 	}
 	offset, err := strconv.Atoi(offsetString)
 	if err != nil {
-		return 0, 0, errors.New("offset invalid")
+		offset = 0
+	}
+
+	if offset < 0 {
+		offset = 0
 	}
 
 	limitString := r.URL.Query().Get(LimitParamKey)
@@ -25,25 +29,32 @@ func ParsePaginationParams(r *http.Request) (int, int, error) {
 	}
 	limit, err := strconv.Atoi(limitString)
 	if err != nil {
-		return 0, 0, errors.New("limit invalid")
+		limit = 10
+	}
+
+	if limit < 0 {
+		limit = 0
 	}
 
 	return offset, limit, nil
 }
 
 func SendPaginatedResponse(w http.ResponseWriter, records interface{}, offset, limit, totalRecords int) {
-	if offset > totalRecords {
-		WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("offset invalid"))
-		return
-	}
-
-	end := offset + limit
-	if end > totalRecords {
-		end = totalRecords
-	}
-
 	// Get a reflect.Value of records.
 	v := reflect.ValueOf(records)
+
+	end := offset + limit
+	if end > v.Len() {
+		end = v.Len()
+	}
+
+	if v.Len() == 0 {
+		offset = 0
+	}
+
+	if offset > v.Len() {
+		offset = v.Len() - 1
+	}
 
 	// Check if v is not a slice.
 	if v.Kind() != reflect.Slice {

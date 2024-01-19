@@ -69,11 +69,11 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(w http.ResponseWriter
     SELECT s.subscription_id, s.created_at, u.username, u.nickname, u.profile_picture_url 
     FROM alpha_schema.subscriptions s 
     INNER JOIN alpha_schema.users u ON s.%[2]s_id = u.user_id
-    WHERE s.%[1]s_id = $1 ORDER BY s.created_at DESC OFFSET $2 LIMIT $3`, userTypes[0], userTypes[1])
+    WHERE s.%[1]s_id = $1 ORDER BY s.created_at DESC`, userTypes[0], userTypes[1])
 
 	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM alpha_schema.subscriptions s WHERE s.%[1]s_id = $1", userTypes[0])
 
-	rows, err := handler.DatabaseManager.GetPool().Query(ctx, subscriptionQuery, jwtUserId, offset, limit)
+	rows, err := handler.DatabaseManager.GetPool().Query(ctx, subscriptionQuery, jwtUserId)
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
