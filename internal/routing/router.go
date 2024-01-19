@@ -37,9 +37,6 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 	// Initialize handlers
 	postHdl := handlers.NewPostHandler(&databaseMgr, &jwtMgr)
 
-	// Initialize user handlers
-	userHdl := handlers.NewUserHandler(&databaseMgr, &jwtMgr, &mailMgr)
-
 	// Initialize subscription handlers
 	subscriptionHdl := handlers.NewSubscriptionHandler(&databaseMgr, &jwtMgr)
 
@@ -93,8 +90,8 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 	// Intialize subscription routes
 	r.Route("/api/subscriptions", func(r chi.Router) {
 		r.Use(jwtMgr.JWTMiddleware)
-		r.Post("/", userHdl.Subscribe)
-		r.Delete("/{subscriptionId}", userHdl.Unsubscribe)
+		r.Post("/", subscriptionHdl.Subscribe)
+		r.Delete("/{subscriptionId}", subscriptionHdl.Unsubscribe)
 		r.Get("/", subscriptionHdl.HandleGetSubscriptions)
 	})
 
