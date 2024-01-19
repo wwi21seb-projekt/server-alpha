@@ -85,6 +85,8 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 	r.Route("/api/posts", func(r chi.Router) {
 		r.Use(jwtMgr.JWTMiddleware)
 		r.Post("/", postHdl.CreatePost)
+		r.Get("/", postHdl.QueryPosts)
+		r.Delete("/{postId}", postHdl.DeletePost)
 	})
 
 	// Intialize subscription routes

@@ -2,13 +2,16 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"net/http"
 	"regexp"
 	"server-alpha/internal/managers"
 	"server-alpha/internal/schemas"
 	"server-alpha/internal/utils"
+	"strconv"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -17,6 +20,8 @@ import (
 
 type PostHdl interface {
 	CreatePost(w http.ResponseWriter, r *http.Request)
+	DeletePost(w http.ResponseWriter, r *http.Request)
+	QueryPosts(w http.ResponseWriter, r *http.Request)
 	HandleGetFeedRequest(w http.ResponseWriter, r *http.Request)
 }
 
@@ -36,6 +41,7 @@ func NewPostHandler(databaseManager *managers.DatabaseMgr, jwtManager *managers.
 	}
 }
 
+// CreatePost Creates a new post
 func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 	// Begin a new transaction
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
@@ -121,6 +127,139 @@ func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 	}, http.StatusCreated)
 }
 
+// DeletePost Deletes a post with the given id
+func (handler *PostHandler) DeletePost(w http.ResponseWriter, r *http.Request) {
+	// Begin a new transaction
+	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
+	if tx == nil || transactionCtx == nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, nil)
+		return
+	}
+	var err error
+	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel, err)
+
+	// Get the post ID from the URL
+	postId := chi.URLParam(r, utils.PostIdParamKey)
+	if _, err := uuid.Parse(postId); err != nil {
+		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, err)
+		return
+	}
+
+	// Get the user ID from the JWT token
+	claims := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
+
+	// Check if the user is the author of the post
+	queryString := "SELECT author_id, content FROM alpha_schema.posts WHERE post_id = $1"
+	row := tx.QueryRow(transactionCtx, queryString, postId)
+
+	var authorId string
+	var content string
+	if err := row.Scan(&authorId, &content); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			utils.WriteAndLogError(w, schemas.PostNotFound, http.StatusNotFound, err)
+			return
+		}
+
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+
+	userId := claims["sub"].(string)
+	if userId != authorId {
+		utils.WriteAndLogError(w, schemas.DeletePostForbidden, http.StatusForbidden, errors.New("user is not the author of the post"))
+		return
+	}
+
+	// Delete the post
+	queryString = "DELETE FROM alpha_schema.posts WHERE post_id = $1"
+	if _, err = tx.Exec(transactionCtx, queryString, postId); err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Delete the hashtags that are not used by any other post
+	hashtags := hashtagRegex.FindAllString(content, -1)
+	queryString = `DELETE FROM alpha_schema.hashtags WHERE hashtags.content = $1 
+					AND NOT EXISTS 
+					    (SELECT 1 FROM alpha_schema.many_posts_has_many_hashtags 
+					WHERE many_posts_has_many_hashtags.hashtag_id_hashtags = 
+					      (SELECT hashtag_id FROM alpha_schema.hashtags WHERE hashtags.content = $1))`
+
+	for _, hashtag := range hashtags {
+		if _, err = tx.Exec(transactionCtx, queryString, hashtag); err != nil {
+			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+			return
+		}
+	}
+
+	// Commit the transaction
+	if err := utils.CommitTransaction(w, tx, transactionCtx, cancel); err != nil {
+		return
+	}
+
+	// Write the response
+	utils.WriteAndLogResponse(w, nil, http.StatusNoContent)
+}
+
+// QueryPosts Queries posts based on the given parameters
+func (handler *PostHandler) QueryPosts(w http.ResponseWriter, r *http.Request) {
+	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
+	if tx == nil || transactionCtx == nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, nil)
+		return
+	}
+	var err error
+	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel, err)
+
+	// Get the query parameters
+	queryParams := r.URL.Query()
+	q := queryParams.Get(utils.QueryParamKey)
+	limit, lastPostId := parseLimitAndPostId(queryParams.Get(utils.LimitParamKey), queryParams.Get(utils.PostIdParamKey))
+
+	// Build query based on if we have a last post ID or not
+	dataQueryArgs := make([]interface{}, 0)
+	countQueryArgs := make([]interface{}, 0)
+
+	queryString := "SELECT %s " +
+		"FROM alpha_schema.posts " +
+		"INNER JOIN alpha_schema.users ON author_id = user_id " +
+		"INNER JOIN alpha_schema.many_posts_has_many_hashtags ON post_id = post_id_posts " +
+		"INNER JOIN alpha_schema.hashtags ON hashtag_id = hashtag_id_hashtags " +
+		"WHERE hashtags.content LIKE $1 "
+
+	dataQueryArgs = append(dataQueryArgs, "%"+q+"%")
+	countQueryArgs = append(countQueryArgs, "%"+q+"%")
+	countQueryString := fmt.Sprintf(queryString, "COUNT(DISTINCT posts.post_id)")
+
+	if lastPostId == "" {
+		queryString += "ORDER BY created_at DESC LIMIT $2"
+	} else {
+		queryString += "AND posts.created_at < (SELECT created_at FROM alpha_schema.posts WHERE post_id = $2) " +
+			"ORDER BY created_at DESC LIMIT $3"
+		dataQueryArgs = append(dataQueryArgs, lastPostId)
+	}
+
+	dataQueryArgs = append(dataQueryArgs, limit)
+	dataQueryString := fmt.Sprintf(queryString, "DISTINCT posts.post_id, username, nickname, profile_picture_url, posts.content, posts.created_at")
+
+	// Get count and posts
+	count, posts, customErr, statusCode, err := retrieveCountAndRecords(transactionCtx, tx, countQueryString, countQueryArgs, dataQueryString, dataQueryArgs)
+	if err != nil {
+		utils.WriteAndLogError(w, customErr, statusCode, err)
+		return
+	}
+
+	// Create paginated response and send it
+	paginatedResponse := createPaginatedResponse(posts, lastPostId, limit, count)
+
+	if err := utils.CommitTransaction(w, tx, transactionCtx, cancel); err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+	}
+
+	utils.WriteAndLogResponse(w, paginatedResponse, http.StatusOK)
+}
+
+// HandleGetFeedRequest Handles a request to get a feed, depending on the feed type
 func (handler *PostHandler) HandleGetFeedRequest(w http.ResponseWriter, r *http.Request) {
 	// Begin a new transaction
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
@@ -143,6 +282,16 @@ func (handler *PostHandler) HandleGetFeedRequest(w http.ResponseWriter, r *http.
 		return
 	}
 
+	paginatedResponse := createPaginatedResponse(posts, lastPostId, limit, records)
+
+	if err := utils.CommitTransaction(w, tx, transactionCtx, cancel); err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+	}
+
+	utils.WriteAndLogResponse(w, paginatedResponse, http.StatusOK)
+}
+
+func createPaginatedResponse(posts []*schemas.PostDTO, lastPostId, limit string, records int) *schemas.PaginatedResponse {
 	// Get the last post ID
 	if len(posts) > 0 {
 		lastPostId = posts[len(posts)-1].PostId
@@ -159,14 +308,10 @@ func (handler *PostHandler) HandleGetFeedRequest(w http.ResponseWriter, r *http.
 		Records:    posts,
 		Pagination: pagination,
 	}
-
-	if err := utils.CommitTransaction(w, tx, transactionCtx, cancel); err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-	}
-
-	utils.WriteAndLogResponse(w, paginatedResponse, http.StatusOK)
+	return paginatedResponse
 }
 
+// determineFeedType Determines the feed type based on the request
 func determineFeedType(r *http.Request, w http.ResponseWriter, handler *PostHandler) (bool, jwt.Claims, error) {
 	// Get UserId from JWT token
 	authHeader := r.Header.Get("Authorization")
@@ -193,13 +338,10 @@ func determineFeedType(r *http.Request, w http.ResponseWriter, handler *PostHand
 	return publicFeedWanted, claims, nil
 }
 
+// retrieveFeed Retrieves a feed based on the given parameters
 func retrieveFeed(ctx context.Context, tx pgx.Tx, w http.ResponseWriter, r *http.Request, publicFeedWanted bool, claims jwt.Claims) ([]*schemas.PostDTO, int, string, string, error) {
-	lastPostId := r.URL.Query().Get(utils.PostIdParamKey)
-	limit := r.URL.Query().Get(utils.LimitParamKey)
-
-	if limit == "" {
-		limit = "10"
-	}
+	queryParams := r.URL.Query()
+	limit, lastPostId := parseLimitAndPostId(queryParams.Get(utils.LimitParamKey), queryParams.Get(utils.PostIdParamKey))
 
 	currentDataQueryIndex := 1
 	currentCountQueryIndex := 1
@@ -209,6 +351,7 @@ func retrieveFeed(ctx context.Context, tx pgx.Tx, w http.ResponseWriter, r *http
 	var countQueryArgs []interface{}
 	var dataQueryArgs []interface{}
 
+	// Dynamically build queries based on user input
 	if !publicFeedWanted {
 		userId = claims.(jwt.MapClaims)["sub"].(string)
 		countQuery = `SELECT COUNT(*) FROM alpha_schema.posts
@@ -230,18 +373,7 @@ func retrieveFeed(ctx context.Context, tx pgx.Tx, w http.ResponseWriter, r *http
 					INNER JOIN alpha_schema.users ON author_id = user_id`
 	}
 
-	// Get the count of posts in the database that match the criteria
-	row := tx.QueryRow(ctx, countQuery, countQueryArgs...)
-
-	var count int
-	if err := row.Scan(&count); err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-		return nil, 0, "", "", err
-	}
-
-	var rows pgx.Rows
-	var err error
-
+	// Append additional clauses to the data query based on the lastPostId
 	if lastPostId == "" {
 		// If we don't have a last post ID, we'll return the newest posts
 		dataQuery += " ORDER BY created_at DESC LIMIT" + fmt.Sprintf(" $%d", currentDataQueryIndex)
@@ -254,10 +386,31 @@ func retrieveFeed(ctx context.Context, tx pgx.Tx, w http.ResponseWriter, r *http
 		dataQueryArgs = append(dataQueryArgs, lastPostId, limit)
 	}
 
+	count, posts, customErr, statusCode, err := retrieveCountAndRecords(ctx, tx, countQuery, countQueryArgs, dataQuery, dataQueryArgs)
+	if err != nil {
+		utils.WriteAndLogError(w, customErr, statusCode, err)
+		return nil, 0, "", "", err
+	}
+
+	return posts, count, lastPostId, limit, nil
+}
+
+// retrieveCountAndRecords Retrieves the count and records based on the given queries
+func retrieveCountAndRecords(ctx context.Context, tx pgx.Tx, countQuery string, countQueryArgs []interface{}, dataQuery string, dataQueryArgs []interface{}) (int, []*schemas.PostDTO, *schemas.CustomError, int, error) {
+	// Get the count of posts in the database that match the criteria
+	row := tx.QueryRow(ctx, countQuery, countQueryArgs...)
+
+	var count int
+	if err := row.Scan(&count); err != nil {
+		return 0, nil, schemas.DatabaseError, http.StatusInternalServerError, err
+	}
+
+	var rows pgx.Rows
+	var err error
+
 	rows, err = tx.Query(ctx, dataQuery, dataQueryArgs...)
 	if err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-		return nil, 0, "", "", err
+		return 0, nil, schemas.DatabaseError, http.StatusInternalServerError, err
 	}
 
 	// Iterate over the rows and create the post DTOs
@@ -268,13 +421,27 @@ func retrieveFeed(ctx context.Context, tx pgx.Tx, w http.ResponseWriter, r *http
 		var createdAt time.Time
 
 		if err := rows.Scan(&post.PostId, &post.Author.Username, &post.Author.Nickname, &post.Author.ProfilePictureURL, &post.Content, &createdAt); err != nil {
-			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-			return nil, 0, "", "", err
+			return 0, nil, schemas.DatabaseError, http.StatusInternalServerError, err
 		}
 
 		post.CreationDate = createdAt.Format(time.RFC3339)
 		posts = append(posts, post)
 	}
 
-	return posts, count, lastPostId, limit, nil
+	return count, posts, nil, 0, nil
+}
+
+// parseLimitAndPostId Parses the limit and post ID from the query parameters with default values if necessary
+func parseLimitAndPostId(limit, lastPostId string) (string, string) {
+	intLimit, err := strconv.Atoi(limit)
+	if err != nil || intLimit > 10 || intLimit < 1 {
+		limit = "10"
+	}
+
+	postId, err := uuid.Parse(lastPostId)
+	if err != nil || postId == uuid.Nil {
+		lastPostId = ""
+	}
+
+	return limit, lastPostId
 }
