@@ -40,6 +40,9 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 	// Initialize user handlers
 	userHdl := handlers.NewUserHandler(&databaseMgr, &jwtMgr, &mailMgr)
 
+	// Initialize subscription handlers
+	subscriptionHdl := handlers.NewSubscriptionHandler(&databaseMgr, &jwtMgr)
+
 	// Initialize health check route
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		// Ping the database
@@ -92,6 +95,7 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 		r.Use(jwtMgr.JWTMiddleware)
 		r.Post("/", userHdl.Subscribe)
 		r.Delete("/{subscriptionId}", userHdl.Unsubscribe)
+		r.Get("/", subscriptionHdl.HandleGetSubscriptions)
 	})
 
 	return r

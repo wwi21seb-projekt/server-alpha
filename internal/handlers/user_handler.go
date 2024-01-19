@@ -2,11 +2,9 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"math/rand"
 	"net/http"
-	"reflect"
 	"strconv"
 	"time"
 
@@ -634,7 +632,7 @@ func (handler *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) 
 	// Get the search query from the query parameters
 	searchQuery := r.URL.Query().Get(utils.UsernameParamKey)
 
-	offset, limit, err := parsePaginationParams(r)
+	offset, limit, err := utils.ParsePaginationParams(r)
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, err)
 		return
@@ -661,7 +659,7 @@ func (handler *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) 
 		users = append(users, user)
 	}
 
-	sendPaginatedResponse(w, users, offset, limit, len(users))
+	utils.SendPaginatedResponse(w, users, offset, limit, len(users))
 }
 
 // RefreshToken refreshes the token pair of the user.
@@ -914,7 +912,7 @@ func (handler *UserHandler) RetrieveUserPosts(w http.ResponseWriter, r *http.Req
 	// Get the username from URL parameter
 	username := chi.URLParam(r, utils.UsernameKey)
 
-	offset, limit, err := parsePaginationParams(r)
+	offset, limit, err := utils.ParsePaginationParams(r)
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, err)
 		return
@@ -942,78 +940,5 @@ func (handler *UserHandler) RetrieveUserPosts(w http.ResponseWriter, r *http.Req
 		posts = append(posts, post)
 	}
 
-	sendPaginatedResponse(w, posts, offset, limit, len(posts))
-}
-
-func parsePaginationParams(r *http.Request) (int, int, error) {
-	offsetString := r.URL.Query().Get(utils.OffsetParamKey)
-	if offsetString == "" {
-		offsetString = "0"
-	}
-	offset, err := strconv.Atoi(offsetString)
-	if err != nil {
-		return 0, 0, errors.New("offset invalid")
-	}
-
-	limitString := r.URL.Query().Get(utils.LimitParamKey)
-	if limitString == "" {
-		limitString = "10"
-	}
-	limit, err := strconv.Atoi(limitString)
-	if err != nil {
-		return 0, 0, errors.New("limit invalid")
-	}
-
-	return offset, limit, nil
-}
-
-func sendPaginatedResponse(w http.ResponseWriter, records interface{}, offset, limit, totalRecords int) {
-	if offset > totalRecords {
-		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("offset invalid"))
-		return
-	}
-
-	end := offset + limit
-	if end > totalRecords {
-		end = totalRecords
-	}
-
-	// Get a reflect.Value of records.
-	v := reflect.ValueOf(records)
-
-	// Check if v is not a slice.
-	if v.Kind() != reflect.Slice {
-		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("records not a valid list"))
-		return
-	}
-
-	var subset interface{}
-	// subset only if records is not empty
-	if v.Len() > 0 {
-		// Use reflect's slice method to get a subset of records.
-		subset = v.Slice(offset, end).Interface()
-	} else {
-		// If the records slice was empty, subset is an empty slice too
-		subset = records
-	}
-
-	// Create Pagination DTO
-	paginationDto := schemas.Pagination{
-		Offset:  offset,
-		Limit:   limit,
-		Records: totalRecords,
-	}
-
-	// Create Paginated Response
-	paginatedResponse := schemas.PaginatedResponse{
-		Records:    subset,
-		Pagination: paginationDto,
-	}
-
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(paginatedResponse); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		utils.WriteAndLogError(w, schemas.InternalServerError, http.StatusInternalServerError, err)
-		return
-	}
+	utils.SendPaginatedResponse(w, posts, offset, limit, len(posts))
 }
