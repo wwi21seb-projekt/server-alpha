@@ -8,5 +8,5 @@ const (
 	LimitParamKey            = "limit"
 	PostIdParamKey           = "postId"
 	FeedTypeParamKey         = "feedType"
-	SubscriptionTypeParamKey = "subscriptionType"
+	SubscriptionTypeParamKey = "type"
 )

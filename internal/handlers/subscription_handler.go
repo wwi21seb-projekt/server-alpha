@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/go-chi/chi/v5"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -55,83 +56,50 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(w http.ResponseWriter
 		return
 	}
 
-	var queryString string
-	var createdAt pgtype.Timestamptz
-	results := make([]any, 0, limit)
-	var totalResults int
-	// read from query parameter
+	// Get subscription type from query params
 	subscriptionType := r.URL.Query().Get(utils.SubscriptionTypeParamKey)
 
-	if subscriptionType == "following" {
-		queryString = `SELECT s.subscription_id, s.created_at, u.username, u.nickname, u.profile_picture_url 
-			FROM alpha_schema.subscriptions s INNER JOIN alpha_schema.users u ON s.subscriber_id = u.user_id 
-			WHERE u.user_id = $1 ORDER BY s.created_at DESC OFFSET $2 LIMIT $3`
-		rows, err := handler.DatabaseManager.GetPool().Query(ctx, queryString, jwtUserId, offset, limit)
-		if err != nil {
+	userTypes := []string{"subscriber", "subscribee"}
+	// If the subscription type is not "following", we need to swap the user types
+	if subscriptionType != "following" {
+		userTypes = []string{"subscribee", "subscriber"}
+	}
+
+	subscriptionQuery := fmt.Sprintf(`
+    SELECT s.subscription_id, s.created_at, u.username, u.nickname, u.profile_picture_url 
+    FROM alpha_schema.subscriptions s 
+    INNER JOIN alpha_schema.users u ON s.%[2]s_id = u.user_id
+    WHERE s.%[1]s_id = $1 ORDER BY s.created_at DESC OFFSET $2 LIMIT $3`, userTypes[0], userTypes[1])
+
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM alpha_schema.subscriptions s WHERE s.%[1]s_id = $1", userTypes[0])
+
+	rows, err := handler.DatabaseManager.GetPool().Query(ctx, subscriptionQuery, jwtUserId, offset, limit)
+	if err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+
+	results := make([]schemas.SubscriptionUserDTO, 0)
+	var subscriptionDate pgtype.Timestamptz
+	for rows.Next() {
+		subscription := schemas.SubscriptionUserDTO{}
+		if err := rows.Scan(&subscription.SubscriptionId, &subscriptionDate, &subscription.User.Username, &subscription.User.Nickname, &subscription.User.ProfilePictureURL); err != nil {
 			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 			return
 		}
+		subscription.SubscriptionDate = subscriptionDate.Time.Format(time.RFC3339)
+		results = append(results, subscription)
+	}
 
-		for rows.Next() {
-			// Get following from jwtUserId
-			following := schemas.SubscriptionUserDTO{}
-			followingUser := schemas.AuthorDTO{}
-			err := rows.Scan(&following.SubscriptionId, &createdAt, &followingUser.Username, &followingUser.Nickname, &followingUser.ProfilePictureURL)
-			if err != nil {
-				utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-				return
-			}
-
-			following.SubscriptionDate = createdAt.Time.Format(time.RFC3339)
-			following.User = followingUser
-			results = append(results, following)
-		}
-
-		// Get total number of following
-		queryString = `SELECT COUNT(*) FROM alpha_schema.subscriptions s 
-    					INNER JOIN alpha_schema.users u ON s.subscriber_id = u.user_id WHERE u.user_id = $1`
-		row := handler.DatabaseManager.GetPool().QueryRow(ctx, queryString, jwtUserId)
-		if err := row.Scan(&totalResults); err != nil {
-			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-			return
-		}
-
-	} else {
-		queryString = `SELECT s.subscription_id, s.created_at, u.username, u.nickname, u.profile_picture_url 
-			FROM alpha_schema.subscriptions s INNER JOIN alpha_schema.users u ON s.subscribee_id = u.user_id 
-			WHERE u.user_id = $1 ORDER BY s.created_at DESC OFFSET $2 LIMIT $3`
-		rows, err := handler.DatabaseManager.GetPool().Query(ctx, queryString, jwtUserId, offset, limit)
-		if err != nil {
-			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-			return
-		}
-
-		for rows.Next() {
-			// Get followers from jwtUserId
-			var follower schemas.SubscriptionUserDTO
-			var followerUser schemas.AuthorDTO
-			err := rows.Scan(&follower.SubscriptionId, &createdAt, &followerUser.Username, &followerUser.Nickname, &followerUser.ProfilePictureURL)
-			if err != nil {
-				utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-				return
-			}
-			follower.SubscriptionDate = createdAt.Time.Format(time.RFC3339)
-			follower.User = followerUser
-			results = append(results, follower)
-		}
-
-		// Get total number of followers
-		queryString = `SELECT COUNT(*) FROM alpha_schema.subscriptions s 
-    					INNER JOIN alpha_schema.users u ON s.subscribee_id = u.user_id WHERE u.user_id = $1`
-		row := handler.DatabaseManager.GetPool().QueryRow(ctx, queryString, jwtUserId)
-		if err := row.Scan(&totalResults); err != nil {
-			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-			return
-		}
+	row := handler.DatabaseManager.GetPool().QueryRow(ctx, countQuery, jwtUserId)
+	var totalSubscriptions int
+	if err := row.Scan(&totalSubscriptions); err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
 	}
 
 	// Send response
-	utils.SendPaginatedResponse(w, results, offset, limit, totalResults)
+	utils.SendPaginatedResponse(w, results, offset, limit, totalSubscriptions)
 }
 
 // Subscribe creates a new subscription between the current user and the username specified in the request body.
