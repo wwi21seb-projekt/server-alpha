@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"net/http"
 	"regexp"
@@ -17,6 +19,7 @@ import (
 
 type PostHdl interface {
 	CreatePost(w http.ResponseWriter, r *http.Request)
+	DeletePost(w http.ResponseWriter, r *http.Request)
 	HandleGetFeedRequest(w http.ResponseWriter, r *http.Request)
 }
 
@@ -36,6 +39,7 @@ func NewPostHandler(databaseManager *managers.DatabaseMgr, jwtManager *managers.
 	}
 }
 
+// CreatePost Creates a new post
 func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 	// Begin a new transaction
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
@@ -121,6 +125,93 @@ func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 	}, http.StatusCreated)
 }
 
+// DeletePost Deletes a post with the given id
+func (handler *PostHandler) DeletePost(w http.ResponseWriter, r *http.Request) {
+	// Begin a new transaction
+	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
+	if tx == nil || transactionCtx == nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, nil)
+		return
+	}
+	var err error
+	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel, err)
+
+	// Get the post ID from the URL
+	postId := chi.URLParam(r, utils.PostIdParamKey)
+
+	// Get the user ID from the JWT token
+	claims := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
+
+	// Check if the user is the author of the post
+	queryString := "SELECT author_id FROM alpha_schema.posts WHERE post_id = $1"
+	row := tx.QueryRow(transactionCtx, queryString, postId)
+
+	var authorId string
+	if err := row.Scan(&authorId); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			utils.WriteAndLogError(w, schemas.PostNotFound, http.StatusNotFound, err)
+			return
+		}
+
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+
+	userId := claims["sub"].(string)
+	if userId != authorId {
+		utils.WriteAndLogError(w, schemas.DeletePostForbidden, http.StatusForbidden, errors.New("user is not the author of the post"))
+		return
+	}
+
+	// Delete the hashtags associated with the post, if the hashtag isn't used also delete it
+	queryString = `DELETE FROM alpha_schema.many_posts_has_many_hashtags 
+       				WHERE post_id_posts = $1 RETURNING hashtag_id_hashtags`
+	rows, err := tx.Query(transactionCtx, queryString, postId)
+	if err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+
+	queries := make([]string, 0)
+	hashtagIds := make([]string, 0)
+
+	for rows.Next() {
+		var hashtagId string
+		if err := rows.Scan(&hashtagId); err != nil {
+			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+			return
+		}
+
+		queryString = `DELETE FROM alpha_schema.hashtags WHERE hashtag_id = $1 
+						AND NOT EXISTS (SELECT 1 FROM alpha_schema.many_posts_has_many_hashtags WHERE hashtag_id_hashtags = $1)`
+		queries = append(queries, queryString)
+		hashtagIds = append(hashtagIds, hashtagId)
+	}
+
+	for i := 0; i < len(queries); i++ {
+		if _, err = tx.Exec(transactionCtx, queries[i], hashtagIds[i]); err != nil {
+			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+			return
+		}
+	}
+
+	// Delete the post
+	queryString = "DELETE FROM alpha_schema.posts WHERE post_id = $1"
+	if _, err = tx.Exec(transactionCtx, queryString, postId); err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Commit the transaction
+	if err := utils.CommitTransaction(w, tx, transactionCtx, cancel); err != nil {
+		return
+	}
+
+	// Write the response
+	utils.WriteAndLogResponse(w, nil, http.StatusNoContent)
+}
+
+// HandleGetFeedRequest Handles a request to get a feed, depending on the feed type
 func (handler *PostHandler) HandleGetFeedRequest(w http.ResponseWriter, r *http.Request) {
 	// Begin a new transaction
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
@@ -167,6 +258,7 @@ func (handler *PostHandler) HandleGetFeedRequest(w http.ResponseWriter, r *http.
 	utils.WriteAndLogResponse(w, paginatedResponse, http.StatusOK)
 }
 
+// determineFeedType Determines the feed type based on the request
 func determineFeedType(r *http.Request, w http.ResponseWriter, handler *PostHandler) (bool, jwt.Claims, error) {
 	// Get UserId from JWT token
 	authHeader := r.Header.Get("Authorization")
@@ -193,6 +285,7 @@ func determineFeedType(r *http.Request, w http.ResponseWriter, handler *PostHand
 	return publicFeedWanted, claims, nil
 }
 
+// retrieveFeed Retrieves a feed based on the given parameters
 func retrieveFeed(ctx context.Context, tx pgx.Tx, w http.ResponseWriter, r *http.Request, publicFeedWanted bool, claims jwt.Claims) ([]*schemas.PostDTO, int, string, string, error) {
 	lastPostId := r.URL.Query().Get(utils.PostIdParamKey)
 	limit := r.URL.Query().Get(utils.LimitParamKey)
