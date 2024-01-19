@@ -38,7 +38,7 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 	postHdl := handlers.NewPostHandler(&databaseMgr, &jwtMgr)
 
 	// Initialize subscription handlers
-	subscriptionHdl := handlers.NewSubscriptionHandler(&databaseMgr, &jwtMgr)
+	subscriptionHdl := handlers.NewSubscriptionHandler(&databaseMgr)
 
 	// Initialize health check route
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {

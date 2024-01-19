@@ -159,14 +159,8 @@ type RefreshTokenRequest struct {
 	RefreshToken string `json:"refreshToken" validate:"required"`
 }
 
-type FollowingDTO struct {
-	SubscriptionId uuid.UUID `json:"subscriptionId"`
-	CreationDate   string    `json:"creationDate"`
-	Following      AuthorDTO `json:"following"`
-}
-
-type FollowerDTO struct {
-	SubscriptionId uuid.UUID `json:"subscriptionId"`
-	CreationDate   string    `json:"creationDate"`
-	Follower       AuthorDTO `json:"follower"`
+type SubscriptionUserDTO struct {
+	SubscriptionId   uuid.UUID `json:"subscriptionId"`
+	SubscriptionDate string    `json:"subscriptionDate"`
+	User             AuthorDTO `json:"user"`
 }

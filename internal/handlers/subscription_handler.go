@@ -27,16 +27,15 @@ type SubscriptionHandler struct {
 	JwtManager      managers.JWTMgr
 }
 
-func NewSubscriptionHandler(databaseManager *managers.DatabaseMgr, jwtManager *managers.JWTMgr) SubscriptionHdl {
+func NewSubscriptionHandler(databaseManager *managers.DatabaseMgr) SubscriptionHdl {
 	return &SubscriptionHandler{
 		DatabaseManager: *databaseManager,
-		JwtManager:      *jwtManager,
 	}
 }
 
 // HandleGetSubscriptions retrieves the subscriptions of a user and sends a paginated response.
 func (handler *SubscriptionHandler) HandleGetSubscriptions(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithDeadline(r.Context(), time.Now().Add(1000*time.Second))
+	ctx, cancel := context.WithDeadline(r.Context(), time.Now().Add(10*time.Second))
 	defer func() {
 		if err := ctx.Err(); err != nil {
 			log.Debug("Context error: ", err)
@@ -61,7 +60,7 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(w http.ResponseWriter
 	results := make([]any, 0, limit)
 	var totalResults int
 	// read from query parameter
-	subscriptionType := r.URL.Query().Get("type")
+	subscriptionType := r.URL.Query().Get(utils.SubscriptionTypeParamKey)
 
 	if subscriptionType == "following" {
 		queryString = `SELECT s.subscription_id, s.created_at, u.username, u.nickname, u.profile_picture_url 
@@ -75,7 +74,7 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(w http.ResponseWriter
 
 		for rows.Next() {
 			// Get following from jwtUserId
-			following := schemas.FollowingDTO{}
+			following := schemas.SubscriptionUserDTO{}
 			followingUser := schemas.AuthorDTO{}
 			err := rows.Scan(&following.SubscriptionId, &createdAt, &followingUser.Username, &followingUser.Nickname, &followingUser.ProfilePictureURL)
 			if err != nil {
@@ -83,8 +82,8 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(w http.ResponseWriter
 				return
 			}
 
-			following.CreationDate = createdAt.Time.Format(time.RFC3339)
-			following.Following = followingUser
+			following.SubscriptionDate = createdAt.Time.Format(time.RFC3339)
+			following.User = followingUser
 			results = append(results, following)
 		}
 
@@ -109,15 +108,15 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(w http.ResponseWriter
 
 		for rows.Next() {
 			// Get followers from jwtUserId
-			var follower schemas.FollowerDTO
+			var follower schemas.SubscriptionUserDTO
 			var followerUser schemas.AuthorDTO
 			err := rows.Scan(&follower.SubscriptionId, &createdAt, &followerUser.Username, &followerUser.Nickname, &followerUser.ProfilePictureURL)
 			if err != nil {
 				utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 				return
 			}
-			follower.CreationDate = createdAt.Time.Format(time.RFC3339)
-			follower.Follower = followerUser
+			follower.SubscriptionDate = createdAt.Time.Format(time.RFC3339)
+			follower.User = followerUser
 			results = append(results, follower)
 		}
 
