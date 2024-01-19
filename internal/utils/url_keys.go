@@ -8,4 +8,5 @@ const (
 	LimitParamKey     = "limit"
 	PostIdParamKey    = "postId"
 	FeedTypeParamKey  = "feedType"
+	QueryParamKey     = "q"
 )
