@@ -140,16 +140,21 @@ func (handler *PostHandler) DeletePost(w http.ResponseWriter, r *http.Request) {
 
 	// Get the post ID from the URL
 	postId := chi.URLParam(r, utils.PostIdParamKey)
+	if _, err := uuid.Parse(postId); err != nil {
+		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, err)
+		return
+	}
 
 	// Get the user ID from the JWT token
 	claims := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
 
 	// Check if the user is the author of the post
-	queryString := "SELECT author_id FROM alpha_schema.posts WHERE post_id = $1"
+	queryString := "SELECT author_id, content FROM alpha_schema.posts WHERE post_id = $1"
 	row := tx.QueryRow(transactionCtx, queryString, postId)
 
 	var authorId string
-	if err := row.Scan(&authorId); err != nil {
+	var content string
+	if err := row.Scan(&authorId, &content); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			utils.WriteAndLogError(w, schemas.PostNotFound, http.StatusNotFound, err)
 			return
@@ -165,43 +170,26 @@ func (handler *PostHandler) DeletePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Delete the hashtags associated with the post, if the hashtag isn't used also delete it
-	queryString = `DELETE FROM alpha_schema.many_posts_has_many_hashtags 
-       				WHERE post_id_posts = $1 RETURNING hashtag_id_hashtags`
-	rows, err := tx.Query(transactionCtx, queryString, postId)
-	if err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-		return
-	}
-
-	queries := make([]string, 0)
-	hashtagIds := make([]string, 0)
-
-	for rows.Next() {
-		var hashtagId string
-		if err := rows.Scan(&hashtagId); err != nil {
-			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-			return
-		}
-
-		queryString = `DELETE FROM alpha_schema.hashtags WHERE hashtag_id = $1 
-						AND NOT EXISTS (SELECT 1 FROM alpha_schema.many_posts_has_many_hashtags WHERE hashtag_id_hashtags = $1)`
-		queries = append(queries, queryString)
-		hashtagIds = append(hashtagIds, hashtagId)
-	}
-
-	for i := 0; i < len(queries); i++ {
-		if _, err = tx.Exec(transactionCtx, queries[i], hashtagIds[i]); err != nil {
-			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-			return
-		}
-	}
-
 	// Delete the post
 	queryString = "DELETE FROM alpha_schema.posts WHERE post_id = $1"
 	if _, err = tx.Exec(transactionCtx, queryString, postId); err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
+	}
+
+	// Delete the hashtags that are not used by any other post
+	hashtags := hashtagRegex.FindAllString(content, -1)
+	queryString = `DELETE FROM alpha_schema.hashtags WHERE hashtags.content = $1 
+					AND NOT EXISTS 
+					    (SELECT 1 FROM alpha_schema.many_posts_has_many_hashtags 
+					WHERE many_posts_has_many_hashtags.hashtag_id_hashtags = 
+					      (SELECT hashtag_id FROM alpha_schema.hashtags WHERE hashtags.content = $1))`
+
+	for _, hashtag := range hashtags {
+		if _, err = tx.Exec(transactionCtx, queryString, hashtag); err != nil {
+			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+			return
+		}
 	}
 
 	// Commit the transaction
@@ -303,7 +291,7 @@ func (handler *PostHandler) HandleGetFeedRequest(w http.ResponseWriter, r *http.
 	utils.WriteAndLogResponse(w, paginatedResponse, http.StatusOK)
 }
 
-func createPaginatedResponse(posts []*schemas.PostDTO, lastPostId string, limit string, records int) *schemas.PaginatedResponse {
+func createPaginatedResponse(posts []*schemas.PostDTO, lastPostId, limit string, records int) *schemas.PaginatedResponse {
 	// Get the last post ID
 	if len(posts) > 0 {
 		lastPostId = posts[len(posts)-1].PostId
@@ -444,7 +432,7 @@ func retrieveCountAndRecords(ctx context.Context, tx pgx.Tx, countQuery string, 
 }
 
 // parseLimitAndPostId Parses the limit and post ID from the query parameters with default values if necessary
-func parseLimitAndPostId(limit string, lastPostId string) (string, string) {
+func parseLimitAndPostId(limit, lastPostId string) (string, string) {
 	intLimit, err := strconv.Atoi(limit)
 	if err != nil || intLimit > 10 || intLimit < 1 {
 		limit = "10"
