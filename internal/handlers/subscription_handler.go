@@ -45,9 +45,12 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(w http.ResponseWriter
 		log.Debug("Context canceled")
 	}()
 
-	// Get the user ID from the JWT token
-	claims := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
-	jwtUserId := claims["sub"].(string)
+	// Get the username from the path variable
+	username := chi.URLParam(r, utils.UsernameKey)
+	if username == "" {
+		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("username missing"))
+		return
+	}
 
 	// Get pagination parameters
 	offset, limit, err := utils.ParsePaginationParams(r)
@@ -59,21 +62,25 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(w http.ResponseWriter
 	// Get subscription type from query params
 	subscriptionType := r.URL.Query().Get(utils.SubscriptionTypeParamKey)
 
+	// Get the followers by default
 	userTypes := []string{"subscriber", "subscribee"}
-	// If the subscription type is not "following", we need to swap the user types
-	if subscriptionType != "following" {
+
+	// If the subscription type is following, fetch the users the user is following
+	if subscriptionType == "following" {
 		userTypes = []string{"subscribee", "subscriber"}
 	}
 
 	subscriptionQuery := fmt.Sprintf(`
     SELECT s.subscription_id, s.created_at, u.username, u.nickname, u.profile_picture_url 
     FROM alpha_schema.subscriptions s 
-    INNER JOIN alpha_schema.users u ON s.%[2]s_id = u.user_id
-    WHERE s.%[1]s_id = $1 ORDER BY s.created_at DESC`, userTypes[0], userTypes[1])
+    INNER JOIN alpha_schema.users u ON s.%[1]s_id = u.user_id
+    WHERE s.%[2]s_id = (SELECT user_id FROM alpha_schema.users WHERE username = $1) 
+    ORDER BY s.created_at DESC`, userTypes[0], userTypes[1])
 
-	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM alpha_schema.subscriptions s WHERE s.%[1]s_id = $1", userTypes[0])
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM alpha_schema.subscriptions s WHERE s.%[1]s_id = "+
+		"(SELECT user_id FROM alpha_schema.users WHERE username = $1)", userTypes[1])
 
-	rows, err := handler.DatabaseManager.GetPool().Query(ctx, subscriptionQuery, jwtUserId)
+	rows, err := handler.DatabaseManager.GetPool().Query(ctx, subscriptionQuery, username)
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
@@ -81,17 +88,19 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(w http.ResponseWriter
 
 	results := make([]schemas.SubscriptionUserDTO, 0)
 	var subscriptionDate pgtype.Timestamptz
+
 	for rows.Next() {
 		subscription := schemas.SubscriptionUserDTO{}
 		if err := rows.Scan(&subscription.SubscriptionId, &subscriptionDate, &subscription.User.Username, &subscription.User.Nickname, &subscription.User.ProfilePictureURL); err != nil {
 			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 			return
 		}
+
 		subscription.SubscriptionDate = subscriptionDate.Time.Format(time.RFC3339)
 		results = append(results, subscription)
 	}
 
-	row := handler.DatabaseManager.GetPool().QueryRow(ctx, countQuery, jwtUserId)
+	row := handler.DatabaseManager.GetPool().QueryRow(ctx, countQuery, username)
 	var totalSubscriptions int
 	if err := row.Scan(&totalSubscriptions); err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
