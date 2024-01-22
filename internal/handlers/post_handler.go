@@ -140,10 +140,6 @@ func (handler *PostHandler) DeletePost(w http.ResponseWriter, r *http.Request) {
 
 	// Get the post ID from the URL
 	postId := chi.URLParam(r, utils.PostIdParamKey)
-	if _, err := uuid.Parse(postId); err != nil {
-		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, err)
-		return
-	}
 
 	// Get the user ID from the JWT token
 	claims := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
