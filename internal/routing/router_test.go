@@ -27,6 +27,13 @@ type User struct {
 	Email          string `json:"email"`
 }
 
+type testCaseStructureSubscription struct {
+	name         string
+	username     string
+	status       int
+	responseBody map[string]interface{}
+}
+
 func setupMocks(t *testing.T) (*mocks.MockDatabaseManager, managers.JWTMgr, *mocks.MockMailManager) {
 	poolMock, err := pgxmock.NewPool()
 	if err != nil {
@@ -212,6 +219,196 @@ func TestUserLogin(t *testing.T) {
 			expect := httpexpect.Default(t, server.URL)
 			request := expect.POST("/api/users/login").WithJSON(tc.user)
 			request.Expect().Status(tc.status)
+
+			if err := poolMock.ExpectationsWereMet(); err != nil {
+				t.Errorf("there were unfulfilled expectations: %s", err)
+			}
+		})
+	}
+}
+
+func TestSubscribeSuccessful(t *testing.T) {
+	testCases := []testCaseStructureSubscription{
+		{
+			"Successful",
+			"testUser",
+			http.StatusOK,
+			map[string]interface{}{
+				"records": []map[string]interface{}{
+					{
+						"subscriptionId":   "123",
+						"subscriptionDate": "2023-12-12",
+						"user": map[string]interface{}{
+							"username":          "testUser",
+							"nickname":          "testi",
+							"profilePictureUrl": "/testUrl/",
+						},
+					},
+				},
+				"pagination": map[string]interface{}{
+					"offset":  0,
+					"limit":   0,
+					"records": 10,
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			databaseMgrMock, jwtManagerMock, mailMgrMock := setupMocks(t)
+
+			router := InitRouter(databaseMgrMock, mailMgrMock, jwtManagerMock)
+
+			server := httptest.NewServer(router)
+			defer server.Close()
+
+			poolMock := databaseMgrMock.GetPool().(pgxmock.PgxPoolIface)
+
+			// Mock database calls
+			poolMock.ExpectBegin()
+			poolMock.ExpectQuery("SELECT").WithArgs(tc.username).WillReturnRows(pgxmock.NewRows([]string{"123", "2023-12-12", "testUser", "testi", "/testUrl/"}))
+			poolMock.ExpectCommit()
+
+			// Assert that the response status code and the response body contain the expected values
+			expect := httpexpect.Default(t, server.URL)
+			request := expect.GET("/api/subscriptions/" + tc.username)
+			// Add a valid JWT to the Authorization header
+			request.WithHeader("Authorization", "Anything")
+			response := request.Expect().Status(tc.status)
+			response.JSON().IsEqual(tc.responseBody)
+
+			if err := poolMock.ExpectationsWereMet(); err != nil {
+				t.Errorf("there were unfulfilled expectations: %s", err)
+			}
+		})
+	}
+}
+
+func TestSubscribeBadRequest(t *testing.T) {
+	testCases := []testCaseStructureSubscription{
+		{
+			"Bad Request",
+			"testUser",
+			http.StatusBadRequest,
+			map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": "The request body is invalid. Please check the request body and try again.",
+					"code":    "ERR-001",
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			databaseMgrMock, jwtManagerMock, mailMgrMock := setupMocks(t)
+
+			router := InitRouter(databaseMgrMock, mailMgrMock, jwtManagerMock)
+
+			server := httptest.NewServer(router)
+			defer server.Close()
+
+			poolMock := databaseMgrMock.GetPool().(pgxmock.PgxPoolIface)
+
+			// Mock database calls
+			poolMock.ExpectBegin()
+			poolMock.ExpectQuery("SELECT").WithArgs(tc.username).WillReturnRows(pgxmock.NewRows([]string{"123", "2023-12-12", "testUser", "testi", "/testUrl/"}))
+			poolMock.ExpectCommit()
+
+			// Assert that the response status code and the response body contain the expected values
+			expect := httpexpect.Default(t, server.URL)
+			request := expect.GET("/api/subscriptions/" + tc.username)
+			response := request.Expect().Status(tc.status)
+			response.JSON().IsEqual(tc.responseBody)
+
+			if err := poolMock.ExpectationsWereMet(); err != nil {
+				t.Errorf("there were unfulfilled expectations: %s", err)
+			}
+		})
+	}
+}
+
+func TestSubscribeUnauthorized(t *testing.T) {
+	testCases := []testCaseStructureSubscription{
+		{
+			"Unauthorized",
+			"testUser",
+			http.StatusUnauthorized,
+			map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": "The request is unauthorized. Please login to your account.",
+					"code":    "ERR-014",
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			databaseMgrMock, jwtManagerMock, mailMgrMock := setupMocks(t)
+
+			router := InitRouter(databaseMgrMock, mailMgrMock, jwtManagerMock)
+
+			server := httptest.NewServer(router)
+			defer server.Close()
+
+			poolMock := databaseMgrMock.GetPool().(pgxmock.PgxPoolIface)
+
+			// Mock database calls
+			poolMock.ExpectBegin()
+			poolMock.ExpectQuery("SELECT").WithArgs(tc.username).WillReturnRows(pgxmock.NewRows([]string{"123", "2023-12-12", "testUser", "testi", "/testUrl/"}))
+			poolMock.ExpectCommit()
+
+			// Assert that the response status code and the response body contain the expected values
+			expect := httpexpect.Default(t, server.URL)
+			request := expect.GET("/api/subscriptions/" + tc.username)
+			response := request.Expect().Status(tc.status)
+			response.JSON().IsEqual(tc.responseBody)
+
+			if err := poolMock.ExpectationsWereMet(); err != nil {
+				t.Errorf("there were unfulfilled expectations: %s", err)
+			}
+		})
+	}
+}
+
+func TestSubscribeNotFound(t *testing.T) {
+	testCases := []testCaseStructureSubscription{
+		{
+			"User not found",
+			"testUser",
+			http.StatusNotFound,
+			map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": "The user was not found. Please check the username and try again.",
+					"code":    "ERR-004",
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			databaseMgrMock, jwtManagerMock, mailMgrMock := setupMocks(t)
+
+			router := InitRouter(databaseMgrMock, mailMgrMock, jwtManagerMock)
+
+			server := httptest.NewServer(router)
+			defer server.Close()
+
+			poolMock := databaseMgrMock.GetPool().(pgxmock.PgxPoolIface)
+
+			// Mock database calls
+			poolMock.ExpectBegin()
+			poolMock.ExpectQuery("SELECT").WithArgs(tc.username).WillReturnRows(pgxmock.NewRows([]string{"123", "2023-12-12", "testUser", "testi", "/testUrl/"}))
+			poolMock.ExpectCommit()
+
+			// Assert that the response status code and the response body contain the expected values
+			expect := httpexpect.Default(t, server.URL)
+			request := expect.GET("/api/subscriptions/" + tc.username)
+			response := request.Expect().Status(tc.status)
+			response.JSON().IsEqual(tc.responseBody)
 
 			if err := poolMock.ExpectationsWereMet(); err != nil {
 				t.Errorf("there were unfulfilled expectations: %s", err)
