@@ -78,6 +78,9 @@ CREATE TABLE alpha_schema.posts (
 	content varchar(256),
 	created_at timestamptz NOT NULL,
 	author_id uuid NOT NULL,
+    longitude double precision,
+    latitude double precision,
+    accuracy integer,
 	CONSTRAINT posts_pk PRIMARY KEY (post_id)
 );
 -- ddl-end --
