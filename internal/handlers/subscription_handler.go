@@ -8,7 +8,6 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	log "github.com/sirupsen/logrus"
 	"net/http"
 	"server-alpha/internal/managers"
@@ -71,32 +70,50 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(w http.ResponseWriter
 	}
 
 	subscriptionQuery := fmt.Sprintf(`
-    SELECT s.subscription_id, s.created_at, u.username, u.nickname, u.profile_picture_url 
-    FROM alpha_schema.subscriptions s 
-    INNER JOIN alpha_schema.users u ON s.%[1]s_id = u.user_id
-    WHERE s.%[2]s_id = (SELECT user_id FROM alpha_schema.users WHERE username = $1) 
-    ORDER BY s.created_at DESC`, userTypes[0], userTypes[1])
+    SELECT s2.subscription_id, s3.subscription_id, u.username,u.nickname, u.profile_picture_url
+	FROM alpha_schema.users AS u
+	JOIN alpha_schema.subscriptions AS s1 ON u.user_id = s1.%[2]s_id
+	LEFT JOIN alpha_schema.subscriptions AS s2 ON s1.%[2]s_id = s2.subscribee_id 
+    	AND s2.subscriber_id = $1
+	LEFT JOIN alpha_schema.subscriptions AS s3 ON s3.subscriber_id = s2.subscribee_id 
+    	AND s3.subscribee_id = $1
+	WHERE s1.%[1]s_id = (SELECT user_id FROM alpha_schema.users WHERE username = $2)
+	ORDER BY s1.created_at DESC`, userTypes[0], userTypes[1])
 
 	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM alpha_schema.subscriptions s WHERE s.%[1]s_id = "+
 		"(SELECT user_id FROM alpha_schema.users WHERE username = $1)", userTypes[1])
 
-	rows, err := handler.DatabaseManager.GetPool().Query(ctx, subscriptionQuery, username)
+	// Get user id from jwt token
+	claims := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
+	jwtUserId := claims["sub"].(string)
+
+	rows, err := handler.DatabaseManager.GetPool().Query(ctx, subscriptionQuery, jwtUserId, username)
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
 	results := make([]schemas.SubscriptionUserDTO, 0)
-	var subscriptionDate pgtype.Timestamptz
 
 	for rows.Next() {
 		subscription := schemas.SubscriptionUserDTO{}
-		if err := rows.Scan(&subscription.SubscriptionId, &subscriptionDate, &subscription.User.Username, &subscription.User.Nickname, &subscription.User.ProfilePictureURL); err != nil {
+		followerId, followingId := uuid.UUID{}, uuid.UUID{}
+
+		if err := rows.Scan(&followingId, &followerId, &subscription.Username, &subscription.Nickname, &subscription.ProfilePictureUrl); err != nil {
 			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 			return
 		}
 
-		subscription.SubscriptionDate = subscriptionDate.Time.Format(time.RFC3339)
+		if followingId != uuid.Nil {
+			*subscription.FollowingId = followingId.String()
+		} else {
+			subscription.FollowingId = nil
+		}
+
+		if followerId != uuid.Nil {
+			*subscription.FollowerId = followerId.String()
+		}
+
 		results = append(results, subscription)
 	}
 

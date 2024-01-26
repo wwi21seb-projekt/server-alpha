@@ -73,9 +73,11 @@ type SubscriptionDTO struct {
 
 // SubscriptionUserDTO is a struct that represents a subscription response
 type SubscriptionUserDTO struct {
-	SubscriptionId   uuid.UUID `json:"subscriptionId"`
-	SubscriptionDate string    `json:"subscriptionDate"`
-	User             AuthorDTO `json:"user"`
+	FollowerId        *string `json:"followerId"`
+	FollowingId       *string `json:"followingId"`
+	Username          string  `json:"username"`
+	Nickname          string  `json:"nickname"`
+	ProfilePictureUrl string  `json:"profilePictureUrl"`
 }
 
 // LocationDTO is a struct that represents a location response
