@@ -121,6 +121,15 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	<column name="created_at" not-null="true">
 		<type name="timestamptz" length="0"/>
 	</column>
+	<column name="longitude">
+        <type name="double precision" length="0"/>
+    </column>
+    <column name="latitude">
+        <type name="double precision" length="0"/>
+    </column>
+    <column name="accuracy">
+        <type name="integer" length="0"/>
+    </column>
 	<constraint name="posts_pk" type="pk-constr" table="alpha_schema.posts">
 		<columns names="post_id" ref-type="src-columns"/>
 	</constraint>

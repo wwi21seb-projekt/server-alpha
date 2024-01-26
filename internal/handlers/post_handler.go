@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"net/http"
 	"regexp"
 	"server-alpha/internal/managers"
@@ -71,8 +72,9 @@ func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 	postId := uuid.New()
 	createdAt := time.Now()
 
-	queryString := "INSERT INTO alpha_schema.posts (post_id, author_id, content, created_at) VALUES($1, $2, $3, $4)"
-	_, err = tx.Exec(transactionCtx, queryString, postId, userId, createPostRequest.Content, createdAt)
+	queryString := "INSERT INTO alpha_schema.posts (post_id, author_id, content, created_at, longitude, latitude, accuracy) VALUES($1, $2, $3, $4, $5, $6, $7)"
+	_, err = tx.Exec(transactionCtx, queryString, postId, userId, createPostRequest.Content, createdAt,
+		createPostRequest.Location.Longitude, createPostRequest.Location.Latitude, createPostRequest.Location.Accuracy)
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
@@ -236,10 +238,12 @@ func (handler *PostHandler) QueryPosts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	dataQueryArgs = append(dataQueryArgs, limit)
-	dataQueryString := fmt.Sprintf(queryString, "DISTINCT posts.post_id, username, nickname, profile_picture_url, posts.content, posts.created_at")
+	dataQueryString := fmt.Sprintf(queryString, "DISTINCT posts.post_id, username, nickname, profile_picture_url, "+
+		"posts.content, posts.created_at, posts.longitude, posts.latitude, posts.accuracy")
 
 	// Get count and posts
-	count, posts, customErr, statusCode, err := retrieveCountAndRecords(transactionCtx, tx, countQueryString, countQueryArgs, dataQueryString, dataQueryArgs)
+	count, posts, customErr, statusCode, err := retrieveCountAndRecords(transactionCtx, tx, countQueryString,
+		countQueryArgs, dataQueryString, dataQueryArgs)
 	if err != nil {
 		utils.WriteAndLogError(w, customErr, statusCode, err)
 		return
@@ -287,6 +291,7 @@ func (handler *PostHandler) HandleGetFeedRequest(w http.ResponseWriter, r *http.
 	utils.WriteAndLogResponse(w, paginatedResponse, http.StatusOK)
 }
 
+// createPaginatedResponse Creates a paginated response based on the given parameters
 func createPaginatedResponse(posts []*schemas.PostDTO, lastPostId, limit string, records int) *schemas.PaginatedResponse {
 	// Get the last post ID
 	if len(posts) > 0 {
@@ -335,7 +340,8 @@ func determineFeedType(r *http.Request, w http.ResponseWriter, handler *PostHand
 }
 
 // retrieveFeed Retrieves a feed based on the given parameters
-func retrieveFeed(ctx context.Context, tx pgx.Tx, w http.ResponseWriter, r *http.Request, publicFeedWanted bool, claims jwt.Claims) ([]*schemas.PostDTO, int, string, string, error) {
+func retrieveFeed(ctx context.Context, tx pgx.Tx, w http.ResponseWriter, r *http.Request, publicFeedWanted bool,
+	claims jwt.Claims) ([]*schemas.PostDTO, int, string, string, error) {
 	queryParams := r.URL.Query()
 	limit, lastPostId := parseLimitAndPostId(queryParams.Get(utils.LimitParamKey), queryParams.Get(utils.PostIdParamKey))
 
@@ -355,18 +361,22 @@ func retrieveFeed(ctx context.Context, tx pgx.Tx, w http.ResponseWriter, r *http
     					INNER JOIN alpha_schema.users ON posts.author_id = users.user_id    					
     					WHERE subscriptions.subscriber_id` + fmt.Sprintf(" = $%d", currentCountQueryIndex)
 		currentCountQueryIndex++
-		dataQuery = `SELECT post_id, username, nickname, profile_picture_url, content, posts.created_at FROM alpha_schema.posts
-					INNER JOIN alpha_schema.subscriptions ON posts.author_id = subscriptions.subscribee_id
-    				INNER JOIN alpha_schema.users ON posts.author_id = users.user_id				
-					WHERE subscriptions.subscriber_id` + fmt.Sprintf(" = $%d", currentDataQueryIndex)
+		dataQuery = `
+			SELECT post_id, username, nickname, profile_picture_url, content, posts.created_at, posts.longitude, posts.latitude, posts.accuracy 
+			FROM alpha_schema.posts
+			INNER JOIN alpha_schema.subscriptions ON posts.author_id = subscriptions.subscribee_id
+			INNER JOIN alpha_schema.users ON posts.author_id = users.user_id				
+			WHERE subscriptions.subscriber_id` + fmt.Sprintf(" = $%d", currentDataQueryIndex)
 		currentDataQueryIndex++
 
 		countQueryArgs = append(countQueryArgs, userId)
 		dataQueryArgs = append(dataQueryArgs, userId)
 	} else {
 		countQuery = "SELECT COUNT(*) FROM alpha_schema.posts"
-		dataQuery = `SELECT post_id, username, nickname, profile_picture_url, content, posts.created_at FROM alpha_schema.posts
-					INNER JOIN alpha_schema.users ON author_id = user_id`
+		dataQuery = `
+			SELECT post_id, username, nickname, profile_picture_url, content, posts.created_at, posts.longitude, posts.latitude, posts.accuracy 
+			FROM alpha_schema.posts
+			INNER JOIN alpha_schema.users ON author_id = user_id`
 	}
 
 	// Append additional clauses to the data query based on the lastPostId
@@ -392,7 +402,8 @@ func retrieveFeed(ctx context.Context, tx pgx.Tx, w http.ResponseWriter, r *http
 }
 
 // retrieveCountAndRecords Retrieves the count and records based on the given queries
-func retrieveCountAndRecords(ctx context.Context, tx pgx.Tx, countQuery string, countQueryArgs []interface{}, dataQuery string, dataQueryArgs []interface{}) (int, []*schemas.PostDTO, *schemas.CustomError, int, error) {
+func retrieveCountAndRecords(ctx context.Context, tx pgx.Tx, countQuery string, countQueryArgs []interface{},
+	dataQuery string, dataQueryArgs []interface{}) (int, []*schemas.PostDTO, *schemas.CustomError, int, error) {
 	// Get the count of posts in the database that match the criteria
 	row := tx.QueryRow(ctx, countQuery, countQueryArgs...)
 
@@ -415,9 +426,23 @@ func retrieveCountAndRecords(ctx context.Context, tx pgx.Tx, countQuery string, 
 	for rows.Next() {
 		post := &schemas.PostDTO{}
 		var createdAt time.Time
+		var longitude, latitude pgtype.Float8
+		var accuracy pgtype.Int4
 
-		if err := rows.Scan(&post.PostId, &post.Author.Username, &post.Author.Nickname, &post.Author.ProfilePictureURL, &post.Content, &createdAt); err != nil {
+		if err := rows.Scan(&post.PostId, &post.Author.Username, &post.Author.Nickname, &post.Author.ProfilePictureURL,
+			&post.Content, &createdAt, &longitude, &latitude, &accuracy); err != nil {
 			return 0, nil, schemas.DatabaseError, http.StatusInternalServerError, err
+		}
+
+		if longitude.Valid && latitude.Valid {
+			post.Location.Longitude = longitude.Float64
+			post.Location.Latitude = latitude.Float64
+		}
+
+		if accuracy.Valid {
+			post.Location.Accuracy = accuracy.Int32
+		} else {
+			post.Location.Accuracy = -1
 		}
 
 		post.CreationDate = createdAt.Format(time.RFC3339)
