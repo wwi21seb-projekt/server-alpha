@@ -72,12 +72,12 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(w http.ResponseWriter
 	subscriptionQuery := fmt.Sprintf(`
     SELECT s2.subscription_id, s3.subscription_id, u.username,u.nickname, u.profile_picture_url
 	FROM alpha_schema.users AS u
-	JOIN alpha_schema.subscriptions AS s1 ON u.user_id = s1.%[2]s_id
-	LEFT JOIN alpha_schema.subscriptions AS s2 ON s1.%[2]s_id = s2.subscribee_id 
+	JOIN alpha_schema.subscriptions AS s1 ON u.user_id = s1.%[1]s_id
+	LEFT JOIN alpha_schema.subscriptions AS s2 ON u.user_id = s2.subscribee_id 
     	AND s2.subscriber_id = $1
-	LEFT JOIN alpha_schema.subscriptions AS s3 ON s3.subscriber_id = s2.subscribee_id 
+	LEFT JOIN alpha_schema.subscriptions AS s3 ON u.user_id = s3.subscriber_id 
     	AND s3.subscribee_id = $1
-	WHERE s1.%[1]s_id = (SELECT user_id FROM alpha_schema.users WHERE username = $2)
+	WHERE s1.%[2]s_id = (SELECT user_id FROM alpha_schema.users WHERE username = $2)
 	ORDER BY s1.created_at DESC`, userTypes[0], userTypes[1])
 
 	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM alpha_schema.subscriptions s WHERE s.%[1]s_id = "+
@@ -107,8 +107,6 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(w http.ResponseWriter
 		if followingId != uuid.Nil {
 			followingIdStr := followingId.String()
 			subscription.FollowingId = &followingIdStr
-		} else {
-			subscription.FollowingId = nil
 		}
 		if followerId != uuid.Nil {
 			followerIdStr := followerId.String()
