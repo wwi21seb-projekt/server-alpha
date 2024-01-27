@@ -41,19 +41,15 @@ func ParsePaginationParams(r *http.Request) (int, int, error) {
 
 func SendPaginatedResponse(w http.ResponseWriter, records interface{}, offset, limit, totalRecords int) {
 	// Get a reflect.Value of records.
+
 	v := reflect.ValueOf(records)
+	if offset > v.Len() {
+		offset = v.Len()
+	}
 
 	end := offset + limit
 	if end > v.Len() {
 		end = v.Len()
-	}
-
-	if v.Len() == 0 {
-		offset = 0
-	}
-
-	if offset > v.Len() {
-		offset = v.Len() - 1
 	}
 
 	// Check if v is not a slice.

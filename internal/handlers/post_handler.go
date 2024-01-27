@@ -13,6 +13,7 @@ import (
 	"server-alpha/internal/schemas"
 	"server-alpha/internal/utils"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -323,6 +324,12 @@ func determineFeedType(r *http.Request, w http.ResponseWriter, handler *PostHand
 	if authHeader == "" {
 		publicFeedWanted = true
 	} else {
+		if !strings.HasPrefix(authHeader, "Bearer ") || len(authHeader) <= len("Bearer ") {
+			err = errors.New("invalid authorization header")
+			utils.WriteAndLogError(w, schemas.InvalidToken, http.StatusBadRequest, err)
+			return false, nil, err
+		}
+
 		jwtToken := authHeader[len("Bearer "):]
 		claims, err = handler.JWTManager.ValidateJWT(jwtToken)
 		if err != nil {

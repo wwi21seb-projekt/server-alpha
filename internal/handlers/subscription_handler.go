@@ -105,13 +105,14 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(w http.ResponseWriter
 		}
 
 		if followingId != uuid.Nil {
-			*subscription.FollowingId = followingId.String()
+			followingIdStr := followingId.String()
+			subscription.FollowingId = &followingIdStr
 		} else {
 			subscription.FollowingId = nil
 		}
-
 		if followerId != uuid.Nil {
-			*subscription.FollowerId = followerId.String()
+			followerIdStr := followerId.String()
+			subscription.FollowerId = &followerIdStr
 		}
 
 		results = append(results, subscription)

@@ -9,8 +9,6 @@ services:
       - POSTGRES_DB=${DB_NAME}
       - POSTGRES_USER=${DB_USER}
       - POSTGRES_PASSWORD=${DB_PASS}
-    ports:
-      - "${DB_PORT}:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
       - ./server_alpha_db.sql:/docker-entrypoint-initdb.d/initdb.sql
@@ -36,8 +34,6 @@ services:
       - DB_USER=${DB_USER}
       - DB_PASS=${DB_PASS}
       - MAILGUN_API_KEY=${MAILGUN_API_KEY}
-    ports:
-      - "${APP_PORT}:8080"
     volumes:
       - ${PWD}/private_key.pem:/private_key.pem
       - ${PWD}/public_key.pem:/public_key.pem
