@@ -45,5 +45,22 @@ services:
       timeout: 5s
       retries: 5
 
+  loki:
+    image: grafana/loki:latest
+    ports:
+      - "${LOKI_PORT}:3100"
+
+  grafana-agent:
+    image: grafana/agent:latest
+    volumes:
+      - /configs/grafana-agent.yaml:/etc/agent-config.yaml
+    command: "-config.file=/etc/agent-config.yaml"
+    depends_on:
+      - loki
+    environment:
+      - HOSTNAME=localhost
+    ports:
+      - "${AGENT_PORT}:3101"
+
 volumes:
   db_data:
