@@ -21,6 +21,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set environment variables
+        run: |
+          echo "SERVER_IMAGE=ghcr.io/wwi21seb-projekt/server-alpha:main" >> $GITHUB_ENV
+          echo "TRAFFIC_RULE=Host(`server-alpha.tech`)" >> $GITHUB_ENV
+
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
