@@ -63,9 +63,9 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT }}
-          script: |
-            export SERVER_IMAGE=${SERVER_IMAGE}
-            export TRAFFIC_RULE=${TRAFFIC_RULE}
+          script: |          
+            echo "SERVER_IMAGE=${SERVER_IMAGE}" >> .env
+            echo "TRAFFIC_RULE=${TRAFFIC_RULE}" >> .env
             
             docker pull ${{ steps.meta.outputs.tags }}
             docker-compose -f deployments/docker-compose.prod.yml -p server_alpha down

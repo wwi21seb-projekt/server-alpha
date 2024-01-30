@@ -108,22 +108,18 @@ jobs:
 
       - name: Deploy PR to Testing Subdomain
         uses: appleboy/ssh-action@v1.0.3
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          SERVER_IMAGE: ghcr.io/wwi21seb-projekt/server-alpha:pr-${{ github.event.pull_request.number }}
-          TRAFFIC_RULE: Host(`pr-${{ github.event.pull_request.number }}.preview.server-alpha.tech`)
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT }}
           script: |
-            export PR_NUMBER=${PR_NUMBER}
-            export SERVER_IMAGE=${SERVER_IMAGE}
-            export TRAFFIC_RULE=${TRAFFIC_RULE}
-            
             cd ./preview/pr-${{ github.event.pull_request.number }}
-            cp ~/.env ./.env
+            cp ~/.env .env
+            
+            echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> .env
+            echo "SERVER_IMAGE=ghcr.io/wwi21seb-projekt/server-alpha:pr-${{ github.event.pull_request.number }}" >> .env
+            echo "TRAFFIC_RULE=Host(\`pr-${{ github.event.pull_request.number }}.preview.server-alpha.tech\`)" >> .env        
             
             docker pull ${{ steps.meta.outputs.tags }}
             docker-compose -f deployments/docker-compose.prod.yml -p pr_${{ github.event.pull_request.number }} down || true

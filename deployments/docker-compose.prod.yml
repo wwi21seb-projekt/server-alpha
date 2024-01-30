@@ -34,9 +34,9 @@ services:
       - DB_USER=${DB_USER}
       - DB_PASS=${DB_PASS}
       - MAILGUN_API_KEY=${MAILGUN_API_KEY}
+      - KEYS_DIR=/go/app/keys
     volumes:
-      - private_key.pem:/private_key.pem
-      - public_key.pem:/public_key.pem
+      - ./keys:/go/app/keys
     networks:
       - traefik_proxy
       - default
