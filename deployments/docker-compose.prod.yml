@@ -35,8 +35,8 @@ services:
       - DB_PASS=${DB_PASS}
       - MAILGUN_API_KEY=${MAILGUN_API_KEY}
     volumes:
-      - ${PWD}/private_key.pem:/private_key.pem
-      - ${PWD}/public_key.pem:/public_key.pem
+      - private_key.pem:/private_key.pem
+      - public_key.pem:/public_key.pem
     networks:
       - traefik_proxy
       - default
