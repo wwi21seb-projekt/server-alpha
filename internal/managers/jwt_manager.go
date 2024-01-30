@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"github.com/golang-jwt/jwt/v5"
 	log "github.com/sirupsen/logrus"
@@ -108,7 +109,9 @@ func NewJWTManagerFromFile() (JWTMgr, error) {
 	privateKeyPath := "private_key.pem"
 	publicKeyPath := "public_key.pem"
 
-	if _, err := os.Stat(privateKeyPath); os.IsNotExist(err) {
+	// Check if the private key exists
+	if _, err := os.Stat(privateKeyPath); errors.Is(err, os.ErrNotExist) {
+		// Generate a new key pair if the private key does not exist
 		err := generateAndStoreKeys(privateKeyPath, publicKeyPath)
 		if err != nil {
 			return nil, err
