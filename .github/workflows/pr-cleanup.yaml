@@ -28,4 +28,4 @@ jobs:
             docker-compose -f deployments/docker-compose.prod.yml -p pr_${{ github.event.pull_request.number }} down || true
             docker-compose -f deployments/docker-compose.prod.yml -p pr_${{ github.event.pull_request.number }} down -v || true
             docker image rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:pr-${{ github.event.pull_request.number }} || true                          
-            rm -r ~/preview/pr-${{ github.event.pull_request.number }}
+            rm -rf ~/preview/pr-${{ github.event.pull_request.number }}
