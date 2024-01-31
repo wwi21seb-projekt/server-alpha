@@ -7,13 +7,14 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
-	"github.com/golang-jwt/jwt/v5"
-	log "github.com/sirupsen/logrus"
 	"net/http"
 	"os"
 	"server-alpha/internal/schemas"
 	"server-alpha/internal/utils"
 	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+	log "github.com/sirupsen/logrus"
 )
 
 type JWTMgr interface {

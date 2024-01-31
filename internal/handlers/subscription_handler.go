@@ -4,17 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"server-alpha/internal/managers"
+	"server-alpha/internal/schemas"
+	"server-alpha/internal/utils"
+	"time"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	log "github.com/sirupsen/logrus"
-	"net/http"
-	"server-alpha/internal/managers"
-	"server-alpha/internal/schemas"
-	"server-alpha/internal/utils"
-	"time"
 )
 
 type SubscriptionHdl interface {
@@ -70,6 +71,17 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(w http.ResponseWriter
 		userTypes = []string{"subscribee", "subscriber"}
 	}
 
+	findUserQuery := fmt.Sprintf("SELECT user_id FROM alpha_schema.users WHERE username = $1")
+	rows, err := handler.DatabaseManager.GetPool().Query(ctx, findUserQuery, username)
+	if err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+	if !rows.Next() {
+		utils.WriteAndLogError(w, schemas.UserNotFound, http.StatusNotFound, errors.New("user not found"))
+		return
+	}
+
 	subscriptionQuery := fmt.Sprintf(`
     SELECT s.subscription_id, s.created_at, u.username, u.nickname, u.profile_picture_url 
     FROM alpha_schema.subscriptions s 
@@ -80,7 +92,7 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(w http.ResponseWriter
 	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM alpha_schema.subscriptions s WHERE s.%[1]s_id = "+
 		"(SELECT user_id FROM alpha_schema.users WHERE username = $1)", userTypes[1])
 
-	rows, err := handler.DatabaseManager.GetPool().Query(ctx, subscriptionQuery, username)
+	rows, err = handler.DatabaseManager.GetPool().Query(ctx, subscriptionQuery, username)
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
