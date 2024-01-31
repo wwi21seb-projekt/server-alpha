@@ -113,3 +113,4 @@ The service can be configured via environment variables. The following variables
 | `JWT_PUBLIC_KEY`  | The public key for JWT verification. | `secret`                                     |
 | `MAILGUN_API_KEY` | The API key for Mailgun.             | `secret`                                     |
 | `SERVER_IMAGE`    | The image of the server.             | `ghcr.io/wwi21seb-projekt/server-alpha:main` |
+| `KEYS_DIR`        | The directory for the keys.          | `./keys`                                     |
