@@ -103,7 +103,7 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT }}
-          source: "deployments/docker-compose.prod.yml,deployments/server_alpha_db.sql"
+          source: "deployments/docker-compose.prod.yml,deployments/server_alpha_db.sql,deployments/provisioning/*,configs/*.yaml"
           target: "/home/serveralpha/preview/pr-${{ github.event.pull_request.number }}"
 
       - name: Deploy PR to Testing Subdomain
@@ -122,6 +122,13 @@ jobs:
             echo "SERVER_IMAGE=ghcr.io/wwi21seb-projekt/server-alpha:pr-${{ github.event.pull_request.number }}" >> .env
             echo "TRAFFIC_RULE=Host(\`pr-${{ github.event.pull_request.number }}.preview.server-alpha.tech\`)" >> .env        
             echo "MONITORING_TRAFFIC_RULE=Host(\`monitoring.pr-${{ github.event.pull_request.number }}.preview.server-alpha.tech\`)" >> .env        
+            
+            jq --arg pr_number "${{ github.event.pull_request.number }}" '
+              .panels[] |=
+              if .title == "Server-Alpha Logs" then .targets[0].expr = "{container_name=\"pr_" + $pr_number + "_app_1\"}"
+              elif .title == "Database Logs" then .targets[0].expr = "{container_name=\"pr_" + $pr_number + "_db_1\"}"
+              else . end
+            ' deployments/provisioning/dashboards/logs.json > tmp.json && mv tmp.json deployments/provisioning/dashboards/logs.json
             
             docker pull ${{ steps.meta.outputs.tags }}
             docker-compose -f deployments/docker-compose.prod.yml -p pr_${{ github.event.pull_request.number }} down || true
