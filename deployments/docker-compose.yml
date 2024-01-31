@@ -19,6 +19,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        tag: "{{.ImageName}}|{{.Name}}|{{.ImageFullID}}|{{.FullID}}"
 
   app:
     image: "${SERVER_IMAGE:-ghcr.io/wwi21seb-projekt/server-alpha:main}" # It's possible to specify the image to use in the environment, default is the latest image from the github container registry
@@ -44,6 +48,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        tag: "{{.ImageName}}|{{.Name}}|{{.ImageFullID}}|{{.FullID}}"
 
 volumes:
   db_data:
