@@ -9,7 +9,6 @@ import (
 	"server-alpha/internal/managers"
 	"server-alpha/internal/managers/mocks"
 	"testing"
-	"time"
 
 	"github.com/gavv/httpexpect/v2"
 	"github.com/google/uuid"
@@ -242,7 +241,6 @@ type testCaseStructureSubscription struct {
 func TestGetSubscriptions(t *testing.T) {
 	userId := "1752e5cc-77a4-4913-9924-63a439654a8e"
 	username := "testUser"
-	mockTime, _ := time.Parse(time.RFC3339, "2024-01-30T20:17:09+01:00")
 
 	// Define test cases
 	testCases := []testCaseStructureSubscription{
@@ -255,13 +253,11 @@ func TestGetSubscriptions(t *testing.T) {
 			map[string]interface{}{
 				"records": []map[string]interface{}{
 					{
-						"subscriptionId":   "dad19145-7a7d-4656-a2ae-5092cf543ec8",
-						"subscriptionDate": "2024-01-30T20:17:09+01:00",
-						"user": map[string]interface{}{
-							"username":          "testo",
-							"nickname":          "testi",
-							"profilePictureURL": "/testUrl/",
-						},
+						"followerId":        "dad19145-7a7d-4656-a2ae-5092cf543ec8",
+						"followingId":       userId,
+						"username":          "testo",
+						"nickname":          "testi",
+						"profilePictureUrl": "/testUrl/",
 					},
 				},
 				"pagination": map[string]interface{}{
@@ -279,20 +275,23 @@ func TestGetSubscriptions(t *testing.T) {
 				},
 				{
 					Query: `
-						SELECT s.subscription_id, s.created_at, u.username, u.nickname, u.profile_picture_url
-						FROM alpha_schema.subscriptions s
-						INNER JOIN alpha_schema.users u ON s.subscriber_id = u.user_id
-						WHERE s.subscribee_id = (SELECT user_id FROM alpha_schema.users WHERE username = $1)
-						ORDER BY s.created_at DESC
-					`,
-					Args:          []interface{}{username},
-					ReturnColumns: []string{"subscription_id", "created_at", "username", "nickname", "profile_picture_url"},
+						SELECT s2.subscription_id, s3.subscription_id, u.username,u.nickname, u.profile_picture_url
+						FROM alpha_schema.users
+						AS u JOIN alpha_schema.subscriptions
+						AS s1 ON u.user_id = s1.subscriber_id LEFT JOIN alpha_schema.subscriptions
+						AS s2 ON u.user_id = s2.subscribee_id AND s2.subscriber_id = $1 LEFT JOIN alpha_schema.subscriptions
+						AS s3 ON u.user_id = s3.subscriber_id AND s3.subscribee_id = $1
+						WHERE s1.subscribee_id = (SELECT user_id FROM alpha_schema.users WHERE username = $2)
+						ORDER BY s1.created_at DESC
+						`,
+					Args:          []interface{}{userId, username},
+					ReturnColumns: []string{"followerId", "followingId", "username", "nickname", "profile_picture_url"},
 					ReturnValues: []interface{}{
-						"dad19145-7a7d-4656-a2ae-5092cf543ec8", // subscription_id
-						mockTime,
-						"testo",     // username
-						"testi",     // nickname
-						"/testUrl/", // profile_picture_url
+						userId,
+						"dad19145-7a7d-4656-a2ae-5092cf543ec8",
+						"testo",
+						"testi",
+						"/testUrl/",
 					},
 				},
 				{

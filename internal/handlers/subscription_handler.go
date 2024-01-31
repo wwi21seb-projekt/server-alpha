@@ -99,7 +99,7 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(w http.ResponseWriter
 	claims := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
 	jwtUserId := claims["sub"].(string)
 
-	rows, err := handler.DatabaseManager.GetPool().Query(ctx, subscriptionQuery, jwtUserId, username)
+	rows, err = handler.DatabaseManager.GetPool().Query(ctx, subscriptionQuery, jwtUserId, username)
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
