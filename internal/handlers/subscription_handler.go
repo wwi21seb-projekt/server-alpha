@@ -71,7 +71,7 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(w http.ResponseWriter
 		userTypes = []string{"subscribee", "subscriber"}
 	}
 
-	findUserQuery := fmt.Sprintf("SELECT user_id FROM alpha_schema.users WHERE username = $1")
+	findUserQuery := "SELECT user_id FROM alpha_schema.users WHERE username = $1"
 	rows, err := handler.DatabaseManager.GetPool().Query(ctx, findUserQuery, username)
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)

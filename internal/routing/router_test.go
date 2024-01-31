@@ -29,14 +29,6 @@ type User struct {
 	Email          string `json:"email"`
 }
 
-type testCaseStructureSubscription struct {
-	name         string
-	userId       string
-	username     string
-	status       int
-	responseBody map[string]interface{}
-}
-
 func setupMocks(t *testing.T) (*mocks.MockDatabaseManager, managers.JWTMgr, *mocks.MockMailManager) {
 	poolMock, err := pgxmock.NewPool()
 	if err != nil {
@@ -230,6 +222,63 @@ func TestUserLogin(t *testing.T) {
 	}
 }
 
+type testCaseStructureSubscription struct {
+	name         string
+	userId       string
+	username     string
+	status       int
+	responseBody map[string]interface{}
+}
+
+type MockDBCall struct {
+	Query         string
+	Args          []interface{}
+	ReturnColumns []string
+	ReturnValues  []interface{}
+}
+
+func runSubscriptionTestCase(t *testing.T, tc testCaseStructureSubscription, dbCalls []MockDBCall) {
+	// Setup mocks
+	databaseMgrMock, jwtManager, mailMgrMock := setupMocks(t)
+
+	// Initialize router
+	router := InitRouter(databaseMgrMock, mailMgrMock, jwtManager)
+
+	// Create test server
+	server := httptest.NewServer(router)
+	defer server.Close()
+
+	// Generate JWT token
+	jwtToken, _ := jwtManager.GenerateJWT(tc.userId, tc.username, false)
+
+	// Get mock pool
+	poolMock := databaseMgrMock.GetPool().(pgxmock.PgxPoolIface)
+
+	// Mock database calls
+	for _, mock := range dbCalls {
+		if mock.Query != "" {
+			rows := pgxmock.NewRows(mock.ReturnColumns)
+			if len(mock.ReturnValues) == len(mock.ReturnColumns) {
+				rows.AddRow(mock.ReturnValues...)
+			}
+			poolMock.ExpectQuery(regexp.QuoteMeta(mock.Query)).WithArgs(mock.Args...).WillReturnRows(rows)
+		}
+	}
+
+	// Create request and get response
+	expect := httpexpect.Default(t, server.URL)
+	request := expect.GET("/api/subscriptions/"+tc.username).WithHeader("Authorization", "Bearer "+jwtToken)
+	response := request.Expect().Status(tc.status)
+
+	// Assert response
+	response.JSON().IsEqual(tc.responseBody)
+
+	// Check if all expectations were met
+	if err := poolMock.ExpectationsWereMet(); err != nil {
+		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
 func TestSubscribeSuccessful(t *testing.T) {
 	// Define test cases
 	testCases := []testCaseStructureSubscription{
@@ -244,7 +293,7 @@ func TestSubscribeSuccessful(t *testing.T) {
 						"subscriptionId":   "dad19145-7a7d-4656-a2ae-5092cf543ec8",
 						"subscriptionDate": "2024-01-30T20:17:09+01:00",
 						"user": map[string]interface{}{
-							"username":          "testUser",
+							"username":          "testo",
 							"nickname":          "testi",
 							"profilePictureURL": "/testUrl/",
 						},
@@ -262,55 +311,39 @@ func TestSubscribeSuccessful(t *testing.T) {
 	// Iterate over test cases
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Setup mocks
-			databaseMgrMock, jwtManager, mailMgrMock := setupMocks(t)
-
-			// Initialize router
-			router := InitRouter(databaseMgrMock, mailMgrMock, jwtManager)
-
-			// Create test server
-			server := httptest.NewServer(router)
-			defer server.Close()
-
-			// Get mock pool
-			poolMock := databaseMgrMock.GetPool().(pgxmock.PgxPoolIface)
-
-			// Mock database calls
-			poolMock.ExpectQuery("SELECT").WithArgs(tc.username).WillReturnRows(pgxmock.NewRows([]string{"username"}).AddRow(tc.username))
 			mockTime, _ := time.Parse(time.RFC3339, "2024-01-30T20:17:09+01:00")
-			poolMock.ExpectQuery(
-				regexp.QuoteMeta(`
-                    SELECT s.subscription_id, s.created_at, u.username, u.nickname, u.profile_picture_url
-                    FROM alpha_schema.subscriptions s
-                    INNER JOIN alpha_schema.users u ON s.subscriber_id = u.user_id
-                    WHERE s.subscribee_id = (SELECT user_id FROM alpha_schema.users WHERE username = $1)
-                    ORDER BY s.created_at DESC
-                `)).
-				WithArgs(tc.username).
-				WillReturnRows(
-					pgxmock.NewRows([]string{"subscription_id", "created_at", "username", "nickname", "profile_picture_url"}).
-						AddRow("dad19145-7a7d-4656-a2ae-5092cf543ec8", mockTime, "testUser", "testi", "/testUrl/"),
-				)
-			poolMock.ExpectQuery(
-				regexp.QuoteMeta(`SELECT COUNT(*) FROM alpha_schema.subscriptions s WHERE s.subscribee_id = (SELECT user_id FROM alpha_schema.users WHERE username = $1)`)).
-				WithArgs(tc.username).
-				WillReturnRows(pgxmock.NewRows([]string{"count"}).AddRow(1))
-
-			// Generate JWT token
-			jwtToken, _ := jwtManager.GenerateJWT(tc.userId, tc.username, false)
-
-			// Create request and get response
-			expect := httpexpect.Default(t, server.URL)
-			request := expect.GET("/api/subscriptions/"+tc.username).WithHeader("Authorization", "Bearer "+jwtToken)
-			response := request.Expect().Status(tc.status)
-
-			// Assert response
-			response.JSON().IsEqual(tc.responseBody)
-
-			// Check if all expectations were met
-			if err := poolMock.ExpectationsWereMet(); err != nil {
-				t.Errorf("there were unfulfilled expectations: %s", err)
-			}
+			runSubscriptionTestCase(t, tc, []MockDBCall{
+				{
+					Query:         "SELECT",
+					Args:          []interface{}{tc.username},
+					ReturnColumns: []string{"username"},
+					ReturnValues:  []interface{}{tc.username},
+				},
+				{
+					Query: `
+						SELECT s.subscription_id, s.created_at, u.username, u.nickname, u.profile_picture_url
+						FROM alpha_schema.subscriptions s
+						INNER JOIN alpha_schema.users u ON s.subscriber_id = u.user_id
+						WHERE s.subscribee_id = (SELECT user_id FROM alpha_schema.users WHERE username = $1)
+						ORDER BY s.created_at DESC
+					`,
+					Args:          []interface{}{tc.username},
+					ReturnColumns: []string{"subscription_id", "created_at", "username", "nickname", "profile_picture_url"},
+					ReturnValues: []interface{}{
+						tc.responseBody["records"].([]map[string]interface{})[0]["subscriptionId"],
+						mockTime,
+						tc.responseBody["records"].([]map[string]interface{})[0]["user"].(map[string]interface{})["username"],
+						tc.responseBody["records"].([]map[string]interface{})[0]["user"].(map[string]interface{})["nickname"],
+						tc.responseBody["records"].([]map[string]interface{})[0]["user"].(map[string]interface{})["profilePictureURL"],
+					},
+				},
+				{
+					Query:         `SELECT COUNT(*) FROM alpha_schema.subscriptions s WHERE s.subscribee_id = (SELECT user_id FROM alpha_schema.users WHERE username = $1)`,
+					Args:          []interface{}{tc.username},
+					ReturnColumns: []string{"count"},
+					ReturnValues:  []interface{}{1},
+				},
+			})
 		})
 	}
 }
@@ -320,8 +353,8 @@ func TestSubscribeBadRequest(t *testing.T) {
 	testCases := []testCaseStructureSubscription{
 		{
 			"Bad Request",
-			"testUser",
 			"12345",
+			"", // Empty username
 			http.StatusBadRequest,
 			map[string]interface{}{
 				"error": map[string]interface{}{
@@ -335,33 +368,7 @@ func TestSubscribeBadRequest(t *testing.T) {
 	// Iterate over each test case
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Setup mocks for the database manager, JWT manager, and mail manager
-			databaseMgrMock, jwtManager, mailMgrMock := setupMocks(t)
-
-			// Initialize the router with the mocks
-			router := InitRouter(databaseMgrMock, mailMgrMock, jwtManager)
-
-			// Create a new test server with the router
-			server := httptest.NewServer(router)
-			defer server.Close()
-
-			// Get a mock of the database pool
-			poolMock := databaseMgrMock.GetPool().(pgxmock.PgxPoolIface)
-
-			// Create a new HTTP request and response expectation
-			expect := httpexpect.Default(t, server.URL)
-			// Generate a JWT token for the test user
-			jwtToken, _ := jwtManager.GenerateJWT(tc.userId, tc.username, false)
-			// Create a GET request to the subscriptions endpoint with the JWT token in the Authorization header
-			request := expect.GET("/api/subscriptions/").WithHeader("Authorization", "Bearer "+jwtToken)
-			// Expect the HTTP status code and response body to match the test case
-			response := request.Expect().Status(tc.status)
-			response.JSON().IsEqual(tc.responseBody)
-
-			// Check if all database expectations were met
-			if err := poolMock.ExpectationsWereMet(); err != nil {
-				t.Errorf("there were unfulfilled expectations: %s", err)
-			}
+			runSubscriptionTestCase(t, tc, []MockDBCall{})
 		})
 	}
 }
@@ -435,37 +442,14 @@ func TestSubscribeNotFound(t *testing.T) {
 	// Iterate over each test case
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Setup mocks for the database manager, JWT manager, and mail manager
-			databaseMgrMock, jwtManager, mailMgrMock := setupMocks(t)
-
-			// Initialize the router with the mocks
-			router := InitRouter(databaseMgrMock, mailMgrMock, jwtManager)
-
-			// Create a new test server with the router
-			server := httptest.NewServer(router)
-			defer server.Close()
-
-			// Get a mock of the database pool
-			poolMock := databaseMgrMock.GetPool().(pgxmock.PgxPoolIface)
-
-			// Mock database calls to return no rows, simulating a user not found scenario
-			poolMock.ExpectQuery("SELECT").WithArgs(tc.username).WillReturnRows(pgxmock.NewRows([]string{}))
-
-			// Generate a JWT token for the test user
-			jwtToken, _ := jwtManager.GenerateJWT(tc.userId, tc.username, false)
-
-			// Create a new HTTP request and response expectation
-			expect := httpexpect.Default(t, server.URL)
-			// Create a GET request to the subscriptions endpoint with the JWT token in the Authorization header
-			request := expect.GET("/api/subscriptions/"+tc.username).WithHeader("Authorization", "Bearer "+jwtToken)
-			// Expect the HTTP status code and response body to match the test case
-			response := request.Expect().Status(tc.status)
-			response.JSON().IsEqual(tc.responseBody)
-
-			// Check if all database expectations were met
-			if err := poolMock.ExpectationsWereMet(); err != nil {
-				t.Errorf("there were unfulfilled expectations: %s", err)
-			}
+			runSubscriptionTestCase(t, tc, []MockDBCall{
+				{
+					Query:         "SELECT",
+					Args:          []interface{}{tc.username},
+					ReturnColumns: []string{"username"},
+					ReturnValues:  []interface{}{},
+				},
+			})
 		})
 	}
 }
