@@ -123,6 +123,13 @@ jobs:
             echo "TRAFFIC_RULE=Host(\`pr-${{ github.event.pull_request.number }}.preview.server-alpha.tech\`)" >> .env        
             echo "MONITORING_TRAFFIC_RULE=Host(\`monitoring.pr-${{ github.event.pull_request.number }}.preview.server-alpha.tech\`)" >> .env        
             
+            jq --arg pr_number "${{ github.event.pull_request.number }}" '
+              .panels[] |=
+              if .title == "Server-Alpha Logs" then .targets[0].expr = "{container_name=\"pr_" + $pr_number + "_app_1\"}"
+              elif .title == "Database Logs" then .targets[0].expr = "{container_name=\"pr_" + $pr_number + "_db_1\"}"
+              else . end
+            ' deployments/provisioning/dashboards/logs.json > tmp.json && mv tmp.json deployments/provisioning/dashboards/logs.json
+            
             docker pull ${{ steps.meta.outputs.tags }}
             docker-compose -f deployments/docker-compose.prod.yml -p pr_${{ github.event.pull_request.number }} down || true
             docker-compose -f deployments/docker-compose.prod.yml -p pr_${{ github.event.pull_request.number }} up -d
