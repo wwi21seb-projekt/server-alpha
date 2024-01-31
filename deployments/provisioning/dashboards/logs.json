@@ -82,7 +82,7 @@
             "uid": "P8E80F9AEF21F6940"
           },
           "editorMode": "builder",
-          "expr": "{container_name=\"server-alpha-app-1\"}",
+          "expr": "{container_name=\"server_alpha_app_1\"}",
           "queryType": "range",
           "refId": "A"
         }
@@ -119,7 +119,7 @@
             "uid": "P8E80F9AEF21F6940"
           },
           "editorMode": "builder",
-          "expr": "{container_name=\"server-alpha-db-1\"}",
+          "expr": "{container_name=\"server_alpha_db_1\"}",
           "queryType": "range",
           "refId": "A"
         }

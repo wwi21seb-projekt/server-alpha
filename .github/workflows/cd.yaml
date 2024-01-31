@@ -62,9 +62,9 @@ jobs:
           port: ${{ secrets.DEPLOY_PORT }}
           script: |
             set_key_value() {
-              key="\$1"
-              value="\$2"
-              file="\$3"
+              key="$1"
+              value="$2"
+              file="$3"
       
               if grep -q "^$key=" "$file"; then
                 sed -i "s/^$key=.*/$key=$value/" "$file"
