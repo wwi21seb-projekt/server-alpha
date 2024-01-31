@@ -56,11 +56,11 @@ type AuthorDTO struct {
 // Content is the content of the post
 // CreatedAt is the timestamp of when the post was created
 type PostDTO struct {
-	PostId       string      `json:"postId"`
-	Author       AuthorDTO   `json:"author"`
-	CreationDate string      `json:"creationDate"`
-	Content      string      `json:"content"`
-	Location     LocationDTO `json:"location"`
+	PostId       string       `json:"postId"`
+	Author       AuthorDTO    `json:"author"`
+	CreationDate string       `json:"creationDate"`
+	Content      string       `json:"content"`
+	Location     *LocationDTO `json:"location,omitempty"`
 }
 
 // SubscriptionDTO is a struct that represents a subscription response

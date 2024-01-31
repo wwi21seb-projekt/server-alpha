@@ -771,7 +771,9 @@ func (handler *UserHandler) RetrieveUserPosts(w http.ResponseWriter, r *http.Req
 	}
 
 	// Retrieve posts from database
-	queryString := "SELECT p.post_id, p.content, p.created_at FROM alpha_schema.posts p JOIN alpha_schema.users u on p.author_id = u.user_id WHERE u.username = $1 ORDER BY p.created_at DESC"
+	queryString := "SELECT p.post_id, p.content, p.created_at, p.longitude, p.latitude, p.accuracy " +
+		"FROM alpha_schema.posts p JOIN alpha_schema.users u on p.author_id = u.user_id " +
+		"WHERE u.username = $1 ORDER BY p.created_at DESC"
 	rows, err := handler.DatabaseManager.GetPool().Query(ctx, queryString, username)
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
@@ -782,12 +784,27 @@ func (handler *UserHandler) RetrieveUserPosts(w http.ResponseWriter, r *http.Req
 	// Create a list of posts
 	posts := make([]schemas.PostDTO, 0)
 	var createdAt pgtype.Timestamptz
+	var longitude, latitude pgtype.Float8
+	var accuracy pgtype.Int4
+
 	for rows.Next() {
 		post := schemas.PostDTO{}
-		if err := rows.Scan(&post.PostId, &post.Content, &createdAt); err != nil {
+		if err := rows.Scan(&post.PostId, &post.Content, &createdAt, &longitude, &latitude, &accuracy); err != nil {
 			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 			return
 		}
+
+		if longitude.Valid && latitude.Valid {
+			post.Location = &schemas.LocationDTO{
+				Longitude: longitude.Float64,
+				Latitude:  latitude.Float64,
+			}
+		}
+
+		if accuracy.Valid {
+			post.Location.Accuracy = accuracy.Int32
+		}
+
 		post.CreationDate = createdAt.Time.Format(time.RFC3339)
 		posts = append(posts, post)
 	}

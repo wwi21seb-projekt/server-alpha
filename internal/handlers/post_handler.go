@@ -72,10 +72,27 @@ func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 	userId := claims["sub"].(string)
 	postId := uuid.New()
 	createdAt := time.Now()
+	locationGiven := true
 
-	queryString := "INSERT INTO alpha_schema.posts (post_id, author_id, content, created_at, longitude, latitude, accuracy) VALUES($1, $2, $3, $4, $5, $6, $7)"
-	_, err = tx.Exec(transactionCtx, queryString, postId, userId, createPostRequest.Content, createdAt,
-		createPostRequest.Location.Longitude, createPostRequest.Location.Latitude, createPostRequest.Location.Accuracy)
+	if createPostRequest.Location == (schemas.LocationDTO{}) {
+		locationGiven = false
+	}
+
+	wantedValues := []string{"post_id", "author_id", "content", "created_at"}
+	wantedPlaceholders := []string{"$1", "$2", "$3", "$4"}
+	queryArgs := []interface{}{postId, userId, createPostRequest.Content, createdAt}
+
+	if locationGiven {
+		wantedValues = append(wantedValues, "longitude", "latitude", "accuracy")
+		wantedPlaceholders = append(wantedPlaceholders, "$5", "$6", "$7")
+		queryArgs = append(queryArgs, createPostRequest.Location.Longitude, createPostRequest.Location.Latitude,
+			createPostRequest.Location.Accuracy)
+	}
+
+	queryString := fmt.Sprintf("INSERT INTO alpha_schema.posts (%s) VALUES(%s)", strings.Join(wantedValues, ","),
+		strings.Join(wantedPlaceholders, ","))
+
+	_, err = tx.Exec(transactionCtx, queryString, queryArgs...)
 	if err != nil {
 		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
@@ -117,8 +134,8 @@ func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Write the response
-	utils.WriteAndLogResponse(w, &schemas.PostDTO{
+	// Create the post DTO
+	post := &schemas.PostDTO{
 		PostId: postId.String(),
 		Author: schemas.AuthorDTO{
 			Username:          author.Username,
@@ -127,7 +144,14 @@ func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 		},
 		Content:      createPostRequest.Content,
 		CreationDate: createdAt.Format(time.RFC3339),
-	}, http.StatusCreated)
+	}
+
+	if locationGiven {
+		post.Location = &createPostRequest.Location
+	}
+
+	// Write the response
+	utils.WriteAndLogResponse(w, post, http.StatusCreated)
 }
 
 // DeletePost Deletes a post with the given id
@@ -442,14 +466,14 @@ func retrieveCountAndRecords(ctx context.Context, tx pgx.Tx, countQuery string, 
 		}
 
 		if longitude.Valid && latitude.Valid {
-			post.Location.Longitude = longitude.Float64
-			post.Location.Latitude = latitude.Float64
+			post.Location = &schemas.LocationDTO{
+				Longitude: longitude.Float64,
+				Latitude:  latitude.Float64,
+			}
 		}
 
 		if accuracy.Valid {
 			post.Location.Accuracy = accuracy.Int32
-		} else {
-			post.Location.Accuracy = -1
 		}
 
 		post.CreationDate = createdAt.Format(time.RFC3339)
