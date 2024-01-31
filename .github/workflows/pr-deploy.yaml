@@ -121,6 +121,7 @@ jobs:
             echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> .env
             echo "SERVER_IMAGE=ghcr.io/wwi21seb-projekt/server-alpha:pr-${{ github.event.pull_request.number }}" >> .env
             echo "TRAFFIC_RULE=Host(\`pr-${{ github.event.pull_request.number }}.preview.server-alpha.tech\`)" >> .env        
+            echo "MONITORING_TRAFFIC_RULE=Host(\`monitoring.pr-${{ github.event.pull_request.number }}.preview.server-alpha.tech\`)" >> .env        
             
             docker pull ${{ steps.meta.outputs.tags }}
             docker-compose -f deployments/docker-compose.prod.yml -p pr_${{ github.event.pull_request.number }} down || true

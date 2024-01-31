@@ -47,6 +47,7 @@ jobs:
         env:
           SERVER_IMAGE: ghcr.io/wwi21seb-projekt/server-alpha:main
           TRAFFIC_RULE: Host(`server-alpha.tech`)
+          MONITORING_TRAFFIC_RULE: Host(`monitoring.server-alpha.tech`)
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.DEPLOY_HOST }}
@@ -66,6 +67,7 @@ jobs:
           script: |          
             echo "SERVER_IMAGE=${SERVER_IMAGE}" >> .env
             echo "TRAFFIC_RULE=${TRAFFIC_RULE}" >> .env
+            echo "MONITORING_TRAFFIC_RULE=${MONITORING_TRAFFIC_RULE}" >> .env
             
             docker pull ${{ steps.meta.outputs.tags }}
             docker-compose -f deployments/docker-compose.prod.yml -p server_alpha down
