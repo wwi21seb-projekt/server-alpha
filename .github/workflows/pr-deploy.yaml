@@ -116,6 +116,7 @@ jobs:
           script: |
             cd ./preview/pr-${{ github.event.pull_request.number }}
             cp ~/.env .env
+            mkdir ./keys
             
             echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> .env
             echo "SERVER_IMAGE=ghcr.io/wwi21seb-projekt/server-alpha:pr-${{ github.event.pull_request.number }}" >> .env
