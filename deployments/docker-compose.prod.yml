@@ -34,20 +34,20 @@ services:
       - DB_USER=${DB_USER}
       - DB_PASS=${DB_PASS}
       - MAILGUN_API_KEY=${MAILGUN_API_KEY}
+      - KEYS_DIR=/go/app/keys
     volumes:
-      - ${PWD}/private_key.pem:/private_key.pem
-      - ${PWD}/public_key.pem:/public_key.pem
+      - ./keys:/go/app/keys
     networks:
       - traefik_proxy
       - default
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.alpha.entrypoints=websecure"
-      - "traefik.http.routers.alpha.rule=Host(`server-alpha.tech`)"
-      - "traefik.http.routers.alpha.tls=true"
-      - "traefik.http.routers.alpha.tls.certresolver=default"
-      - "traefik.http.routers.alpha.middlewares=secHeaders@file"
-      - "traefik.http.services.alpha.loadbalancer.server.port=8080" # Nicht den Host-Port verwenden sondern den internen Container port!
+      - "traefik.http.routers.alpha-${PR_NUMBER:-main}.entrypoints=websecure"
+      - "traefik.http.routers.alpha-${PR_NUMBER:-main}.rule=${TRAFFIC_RULE}"
+      - "traefik.http.routers.alpha-${PR_NUMBER:-main}.tls=true"
+      - "traefik.http.routers.alpha-${PR_NUMBER:-main}.tls.certresolver=default"
+      - "traefik.http.routers.alpha-${PR_NUMBER:-main}.middlewares=secHeaders@file"
+      - "traefik.http.services.alpha-${PR_NUMBER:-main}.loadbalancer.server.port=8080"
     healthcheck:
       test: "wget --no-verbose --tries=1 --spider http://app:8080/health || exit 1"
       interval: 10s
