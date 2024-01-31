@@ -5,3 +5,4 @@ type contextKey struct {
 }
 
 var ClaimsKey = &contextKey{"claims"}
+var TraceIdKey = &contextKey{"traceId"}

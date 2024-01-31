@@ -1,8 +1,10 @@
 package routing
 
 import (
+	"context"
 	"github.com/go-chi/cors"
 	"net/http"
+	"os"
 	"server-alpha/internal/handlers"
 	"server-alpha/internal/managers"
 	"server-alpha/internal/schemas"
@@ -23,8 +25,8 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 		AllowedHeaders: []string{"Accept", "Authorization", "Content-Type"},
 		MaxAge:         300,
 	}))
-	// Inject request ID into context
-	r.Use(middleware.RequestID)
+	// Inject trace ID into request context
+	r.Use(traceIdMiddleware)
 	// Add logger to middleware stack
 	r.Use(middleware.Logger)
 	// Add recoverer to middleware stack
@@ -39,6 +41,27 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 
 	// Initialize subscription handlers
 	subscriptionHdl := handlers.NewSubscriptionHandler(&databaseMgr)
+
+	// Initialize metadata route
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		apiVersion := os.Getenv("PR_NUMBER")
+		var pullRequest string
+
+		if apiVersion == "" {
+			apiVersion = "main:latest"
+		} else {
+			pullRequest = "https://github.com/wwi21seb-projekt/server-alpha/pull/" + apiVersion
+			apiVersion = "PR-" + apiVersion
+		}
+
+		metadata := &schemas.MetadataDTO{
+			ApiVersion:  apiVersion,
+			ApiName:     "Server Alpha",
+			PullRequest: pullRequest,
+		}
+
+		utils.WriteAndLogResponse(w, metadata, http.StatusOK)
+	})
 
 	// Initialize health check route
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -115,4 +138,15 @@ func userRouter(databaseMgr *managers.DatabaseMgr, jwtMgr managers.JWTMgr, mailM
 		r.With(jwtMgr.JWTMiddleware).Get("/{username}", userHdl.HandleGetUserRequest)
 		r.Get("/{username}/feed", userHdl.RetrieveUserPosts)
 	}
+}
+
+func traceIdMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		traceId := utils.GenerateTraceId()
+		ctx := r.Context()
+		ctx = context.WithValue(ctx, utils.TraceIdKey, traceId)
+		r = r.WithContext(ctx)
+		r.Header.Set("X-Trace-Id", traceId)
+		next.ServeHTTP(w, r)
+	})
 }

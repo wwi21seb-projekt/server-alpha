@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -16,7 +17,7 @@ func DecodeRequestBody(w http.ResponseWriter, r *http.Request, target interface{
 	return nil
 }
 
-func WriteAndLogResponse(w http.ResponseWriter, response interface{}, statusCode int) {
+func WriteAndLogResponse(ctx context.Context, w http.ResponseWriter, response interface{}, statusCode int) {
 	w.WriteHeader(statusCode)
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
