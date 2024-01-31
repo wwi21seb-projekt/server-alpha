@@ -98,12 +98,12 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.alpha-${PR_NUMBER:-main}.entrypoints=websecure"
-      - "traefik.http.routers.alpha-${PR_NUMBER:-main}.rule=${MONITORING_TRAFFIC_RULE}"
-      - "traefik.http.routers.alpha-${PR_NUMBER:-main}.tls=true"
-      - "traefik.http.routers.alpha-${PR_NUMBER:-main}.tls.certresolver=default"
-      - "traefik.http.routers.alpha-${PR_NUMBER:-main}.middlewares=secHeaders@file"
-      - "traefik.http.services.alpha-${PR_NUMBER:-main}.loadbalancer.server.port=3000"
+      - "traefik.http.routers.alpha-monitoring-${PR_NUMBER:-main}.entrypoints=websecure"
+      - "traefik.http.routers.alpha-monitoring-${PR_NUMBER:-main}.rule=${MONITORING_TRAFFIC_RULE}"
+      - "traefik.http.routers.alpha-monitoring-${PR_NUMBER:-main}.tls=true"
+      - "traefik.http.routers.alpha-monitoring-${PR_NUMBER:-main}.tls.certresolver=default"
+      - "traefik.http.routers.alpha-monitoring-${PR_NUMBER:-main}.middlewares=secHeaders@file"
+      - "traefik.http.services.alpha-monitoring-${PR_NUMBER:-main}.loadbalancer.server.port=3000"
 
 networks:
   traefik_proxy:
