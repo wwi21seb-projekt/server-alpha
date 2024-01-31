@@ -13,7 +13,7 @@ COPY . .
 RUN go build -o server-alpha ./cmd/server
 
 ## Serve only the compiled binary in the second stage
-FROM alpine:3.19.0 AS serve
+FROM alpine:3.19.1 AS serve
 
 # Change working directory to /go/app
 WORKDIR /go/app
