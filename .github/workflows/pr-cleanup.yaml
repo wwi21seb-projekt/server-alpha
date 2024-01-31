@@ -24,7 +24,7 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT }}
           script: |
-            cd ./preview/pr_${{ github.event.pull_request.number }}
+            cd ./preview/pr-${{ github.event.pull_request.number }}
             docker-compose -f deployments/docker-compose.prod.yml -p pr_${{ github.event.pull_request.number }} down || true
             docker-compose -f deployments/docker-compose.prod.yml -p pr_${{ github.event.pull_request.number }} down -v || true
             docker image rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:pr-${{ github.event.pull_request.number }} || true                          
