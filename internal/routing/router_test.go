@@ -244,7 +244,7 @@ func TestGetSubscriptions(t *testing.T) {
 	username := "testUser"
 	mockTime, _ := time.Parse(time.RFC3339, "2024-01-30T20:17:09+01:00")
 
-	//Define test cases
+	// Define test cases
 	testCases := []testCaseStructureSubscription{
 		{
 			"Successful",
@@ -288,11 +288,11 @@ func TestGetSubscriptions(t *testing.T) {
 					Args:          []interface{}{username},
 					ReturnColumns: []string{"subscription_id", "created_at", "username", "nickname", "profile_picture_url"},
 					ReturnValues: []interface{}{
-						"dad19145-7a7d-4656-a2ae-5092cf543ec8", //subscription_id
+						"dad19145-7a7d-4656-a2ae-5092cf543ec8", // subscription_id
 						mockTime,
-						"testo",     //username
-						"testi",     //nickname
-						"/testUrl/", //profile_picture_url
+						"testo",     // username
+						"testi",     // nickname
+						"/testUrl/", // profile_picture_url
 					},
 				},
 				{
