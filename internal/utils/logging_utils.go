@@ -2,7 +2,6 @@ package utils
 
 import (
 	"context"
-	"errors"
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 	"net/http"
@@ -11,7 +10,8 @@ import (
 
 type CustomTextFormatter struct{}
 
-func (f *CustomTextFormatter) Format(entry *log.Entry) ([]byte, error) {
+// Format formats the log entry and satisfies the Formatter interface
+func (f *CustomTextFormatter) Format(entry *log.Entry) ([]byte, error) { // skipcq: RVV-B0013
 	// Format should be: [timestamp] [level] [service] [traceId] message
 	// Example: [2021-05-01 12:00:00] [info] [PR-1] [123e4567-e89b-12d3-a456-426614174000] Request received
 	// If service is not set, use "main" as default, if traceId is not set, use "none" as default
@@ -26,10 +26,6 @@ func (f *CustomTextFormatter) Format(entry *log.Entry) ([]byte, error) {
 	}
 	if traceId == nil {
 		traceId = "none"
-	}
-
-	if message == "" {
-		return nil, errors.New("message is empty")
 	}
 
 	return []byte("[" + timestamp + "] [" + level + "] [" + service.(string) + "] [" + traceId.(string) + "] " +
