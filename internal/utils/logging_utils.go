@@ -11,7 +11,7 @@ func GenerateTraceId() string {
 	return uuid.New().String()
 }
 
-func logEntry(entry *log.Entry, level string, message string) {
+func logEntry(entry *log.Entry, level, message string) {
 	switch level {
 	case "debug":
 		entry.Debug(message)
@@ -30,7 +30,7 @@ func logEntry(entry *log.Entry, level string, message string) {
 	}
 }
 
-func LogMessage(level string, message string) {
+func LogMessage(level, message string) {
 	service := "PR-" + os.Getenv("PR_NUMBER")
 
 	if service == "PR-" {
@@ -44,7 +44,7 @@ func LogMessage(level string, message string) {
 	logEntry(entry, level, message)
 }
 
-func LogMessageWithFields(ctx context.Context, level string, message string) {
+func LogMessageWithFields(ctx context.Context, level, message string) {
 	traceId := ctx.Value(TraceIdKey).(string)
 	service := "PR-" + os.Getenv("PR_NUMBER")
 

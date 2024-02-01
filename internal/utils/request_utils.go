@@ -26,13 +26,13 @@ func WriteAndLogResponse(ctx context.Context, w http.ResponseWriter, response in
 	}
 }
 
-func WriteAndLogError(ctx context.Context, w http.ResponseWriter, error *schemas.CustomError, statusCode int, err error) {
+func WriteAndLogError(ctx context.Context, w http.ResponseWriter, customErr *schemas.CustomError, statusCode int, err error) {
 	w.WriteHeader(statusCode)
 	LogMessageWithFields(ctx, "error", "Error occurred: "+err.Error())
-	LogMessageWithFields(ctx, "error", "Returning "+error.Code+" / "+error.Message)
+	LogMessageWithFields(ctx, "error", "Returning "+customErr.Code+" / "+customErr.Message)
 
 	errorDto := &schemas.ErrorDTO{
-		Error: *error,
+		Error: *customErr,
 	}
 
 	if err := json.NewEncoder(w).Encode(errorDto); err != nil {
