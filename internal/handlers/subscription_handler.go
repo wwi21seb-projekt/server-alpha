@@ -4,16 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/go-chi/chi/v5"
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	log "github.com/sirupsen/logrus"
 	"net/http"
 	"server-alpha/internal/managers"
 	"server-alpha/internal/schemas"
 	"server-alpha/internal/utils"
 	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	log "github.com/sirupsen/logrus"
 )
 
 type SubscriptionHdl interface {
@@ -46,10 +47,6 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(w http.ResponseWriter
 
 	// Get the username from the path variable
 	username := chi.URLParam(r, utils.UsernameKey)
-	if username == "" {
-		utils.WriteAndLogError(ctx, w, schemas.BadRequest, http.StatusBadRequest, errors.New("username missing"))
-		return
-	}
 
 	// Get pagination parameters
 	offset, limit, err := utils.ParsePaginationParams(r)
@@ -67,6 +64,17 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(w http.ResponseWriter
 	// If the subscription type is following, fetch the users the user is following
 	if subscriptionType == "following" {
 		userTypes = []string{"subscribee", "subscriber"}
+	}
+
+	findUserQuery := "SELECT user_id FROM alpha_schema.users WHERE username = $1"
+	rows, err := handler.DatabaseManager.GetPool().Query(ctx, findUserQuery, username)
+	if err != nil {
+		utils.WriteAndLogError(ctx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+	if !rows.Next() {
+		utils.WriteAndLogError(ctx, w, schemas.UserNotFound, http.StatusNotFound, errors.New("user not found"))
+		return
 	}
 
 	subscriptionQuery := fmt.Sprintf(`
@@ -87,7 +95,7 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(w http.ResponseWriter
 	claims := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
 	jwtUserId := claims["sub"].(string)
 
-	rows, err := handler.DatabaseManager.GetPool().Query(ctx, subscriptionQuery, jwtUserId, username)
+	rows, err = handler.DatabaseManager.GetPool().Query(ctx, subscriptionQuery, jwtUserId, username)
 	if err != nil {
 		utils.WriteAndLogError(ctx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
