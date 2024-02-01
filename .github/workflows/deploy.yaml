@@ -8,6 +8,10 @@ on:
         required: true
         type: boolean
         description: 'Whether to deploy to the preview domain or not'
+      pr-number:
+        required: false
+        type: number
+        description: 'The number of the pull request to deploy'
       ssh-script:
         required: true
         type: string
@@ -50,7 +54,7 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT }}
           source: "deployments/docker-compose.prod.yml,deployments/server_alpha_db.sql,deployments/provisioning/*,configs/*.yaml"
-          target: "/home/serveralpha/preview/pr-${{ github.event.pull_request.number }}"
+          target: ${{ inputs.preview && format('./preview/pr-{0}', inputs.pr-number) || './' }}
 
       - name: Setup SSH
         uses: appleboy/ssh-action@v1.0.3
