@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
+	"net/http"
 	"os"
 )
 
@@ -30,12 +31,18 @@ func logEntry(entry *log.Entry, level, message string) {
 	}
 }
 
-func LogMessage(level, message string) {
+func extractServiceName() string {
 	service := "PR-" + os.Getenv("PR_NUMBER")
 
 	if service == "PR-" {
 		service = "main"
 	}
+
+	return service
+}
+
+func LogMessage(level, message string) {
+	service := extractServiceName()
 
 	entry := log.WithFields(log.Fields{
 		"service": service,
@@ -46,11 +53,7 @@ func LogMessage(level, message string) {
 
 func LogMessageWithFields(ctx context.Context, level, message string) {
 	traceId := ctx.Value(TraceIdKey).(string)
-	service := "PR-" + os.Getenv("PR_NUMBER")
-
-	if service == "PR-" {
-		service = "main"
-	}
+	service := extractServiceName()
 
 	entry := log.WithFields(log.Fields{
 		"traceId": traceId,
@@ -58,4 +61,31 @@ func LogMessageWithFields(ctx context.Context, level, message string) {
 	})
 
 	logEntry(entry, level, message)
+}
+
+func LogMessageWithFieldsAndError(ctx context.Context, level, message string, err error) {
+	traceId := ctx.Value(TraceIdKey).(string)
+	service := extractServiceName()
+
+	entry := log.WithFields(log.Fields{
+		"traceId": traceId,
+		"service": service,
+		"error":   err,
+	})
+
+	logEntry(entry, level, message)
+}
+
+func LogRequest(ctx context.Context, r *http.Request) {
+	traceId := ctx.Value(TraceIdKey).(string)
+	service := extractServiceName()
+
+	entry := log.WithFields(log.Fields{
+		"traceId":  traceId,
+		"service":  service,
+		"method":   r.Method,
+		"endpoint": r.URL.Path,
+	})
+
+	logEntry(entry, "info", "Request received")
 }
