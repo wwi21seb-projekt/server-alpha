@@ -60,7 +60,7 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 			PullRequest: pullRequest,
 		}
 
-		utils.WriteAndLogResponse(w, metadata, http.StatusOK)
+		utils.WriteAndLogResponse(r.Context(), w, metadata, http.StatusOK)
 	})
 
 	// Initialize health check route
@@ -93,7 +93,7 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 			Text: imprint,
 		}
 
-		utils.WriteAndLogResponse(w, imprintDto, http.StatusOK)
+		utils.WriteAndLogResponse(r.Context(), w, imprintDto, http.StatusOK)
 	})
 
 	// Initialize user routes

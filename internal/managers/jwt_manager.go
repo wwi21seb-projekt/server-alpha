@@ -76,9 +76,11 @@ func (jm *JWTManager) ValidateJWT(tokenString string) (jwt.Claims, error) {
 // JWTMiddleware is a middleware that validates the JWT token in the request header.
 func (jm *JWTManager) JWTMiddleware(next http.Handler) http.Handler {
 	fn := func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
 		// Check if the request has a JWT token
 		if r.Header.Get("Authorization") == "" {
-			utils.WriteAndLogError(w, schemas.Unauthorized, http.StatusUnauthorized, fmt.Errorf("missing authorization header"))
+			utils.WriteAndLogError(ctx, w, schemas.Unauthorized, http.StatusUnauthorized, fmt.Errorf("missing authorization header"))
 			return
 		}
 
@@ -89,12 +91,11 @@ func (jm *JWTManager) JWTMiddleware(next http.Handler) http.Handler {
 		// Validate the JWT token
 		claims, err := jm.ValidateJWT(token)
 		if err != nil || claims.(jwt.MapClaims)["refresh"] == "true" {
-			utils.WriteAndLogError(w, schemas.Unauthorized, http.StatusUnauthorized, err)
+			utils.WriteAndLogError(ctx, w, schemas.Unauthorized, http.StatusUnauthorized, err)
 			return
 		}
 
 		// Add the claims to the request context
-		ctx := r.Context()
 		ctx = context.WithValue(ctx, utils.ClaimsKey, claims)
 		r = r.WithContext(ctx)
 

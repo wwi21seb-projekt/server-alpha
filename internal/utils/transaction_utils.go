@@ -17,7 +17,7 @@ func BeginTransaction(w http.ResponseWriter, r *http.Request, pool interfaces.Pg
 
 	tx, err := pool.Begin(transactionCtx)
 	if err != nil {
-		WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		cancel()
 		return nil, nil, nil
 	}
@@ -37,7 +37,7 @@ func RollbackTransaction(w http.ResponseWriter, tx pgx.Tx, ctx context.Context, 
 
 			cancel()
 			log.Debug("Context canceled")
-			WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+			WriteAndLogError(ctx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		}
 		log.Debug("Transaction rolled back")
 	}
@@ -56,7 +56,7 @@ func CommitTransaction(w http.ResponseWriter, tx pgx.Tx, ctx context.Context, ca
 
 	if err != nil {
 		log.Debug("Rolling back transaction due to error: ", err)
-		WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		WriteAndLogError(ctx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return err
 	}
 

@@ -48,7 +48,7 @@ func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 	// Begin a new transaction
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
 	if tx == nil || transactionCtx == nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, nil)
+		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, nil)
 		return
 	}
 	var err error
@@ -56,12 +56,12 @@ func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 
 	// Decode the request body into the registration request struct
 	createPostRequest := &schemas.CreatePostRequest{}
-	if err := utils.DecodeRequestBody(w, r, createPostRequest); err != nil {
+	if err := utils.DecodeRequestBody(transactionCtx, w, r, createPostRequest); err != nil {
 		return
 	}
 
 	// Validate the registration request struct using the validator
-	if err := utils.ValidateStruct(w, createPostRequest); err != nil {
+	if err := utils.ValidateStruct(transactionCtx, w, createPostRequest); err != nil {
 		return
 	}
 
@@ -94,7 +94,7 @@ func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 
 	_, err = tx.Exec(transactionCtx, queryString, queryArgs...)
 	if err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -108,13 +108,13 @@ func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 						ON CONFLICT (content) DO UPDATE SET content=alpha_schema.hashtags.content 
 						RETURNING hashtag_id`
 		if err := tx.QueryRow(transactionCtx, queryString, hashtagId, hashtag).Scan(&hashtagId); err != nil {
-			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+			utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
 			return
 		}
 
 		queryString = "INSERT INTO alpha_schema.many_posts_has_many_hashtags (post_id_posts, hashtag_id_hashtags) VALUES($1, $2)"
 		if _, err = tx.Exec(transactionCtx, queryString, postId, hashtagId); err != nil {
-			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+			utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
 			return
 		}
 	}
@@ -125,7 +125,7 @@ func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 
 	author := &schemas.AuthorDTO{}
 	if err := row.Scan(&author.Username, &author.Nickname); err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -151,7 +151,7 @@ func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Write the response
-	utils.WriteAndLogResponse(w, post, http.StatusCreated)
+	utils.WriteAndLogResponse(transactionCtx, w, post, http.StatusCreated)
 }
 
 // DeletePost Deletes a post with the given id
@@ -159,7 +159,7 @@ func (handler *PostHandler) DeletePost(w http.ResponseWriter, r *http.Request) {
 	// Begin a new transaction
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
 	if tx == nil || transactionCtx == nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, nil)
+		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, nil)
 		return
 	}
 	var err error
@@ -179,24 +179,24 @@ func (handler *PostHandler) DeletePost(w http.ResponseWriter, r *http.Request) {
 	var content string
 	if err := row.Scan(&authorId, &content); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			utils.WriteAndLogError(w, schemas.PostNotFound, http.StatusNotFound, err)
+			utils.WriteAndLogError(transactionCtx, w, schemas.PostNotFound, http.StatusNotFound, err)
 			return
 		}
 
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
 	userId := claims["sub"].(string)
 	if userId != authorId {
-		utils.WriteAndLogError(w, schemas.DeletePostForbidden, http.StatusForbidden, errors.New("user is not the author of the post"))
+		utils.WriteAndLogError(transactionCtx, w, schemas.DeletePostForbidden, http.StatusForbidden, errors.New("user is not the author of the post"))
 		return
 	}
 
 	// Delete the post
 	queryString = "DELETE FROM alpha_schema.posts WHERE post_id = $1"
 	if _, err = tx.Exec(transactionCtx, queryString, postId); err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -210,7 +210,7 @@ func (handler *PostHandler) DeletePost(w http.ResponseWriter, r *http.Request) {
 
 	for _, hashtag := range hashtags {
 		if _, err = tx.Exec(transactionCtx, queryString, hashtag); err != nil {
-			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+			utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
 			return
 		}
 	}
@@ -221,14 +221,14 @@ func (handler *PostHandler) DeletePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Write the response
-	utils.WriteAndLogResponse(w, nil, http.StatusNoContent)
+	utils.WriteAndLogResponse(transactionCtx, w, nil, http.StatusNoContent)
 }
 
 // QueryPosts Queries posts based on the given parameters
 func (handler *PostHandler) QueryPosts(w http.ResponseWriter, r *http.Request) {
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
 	if tx == nil || transactionCtx == nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, nil)
+		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, nil)
 		return
 	}
 	var err error
@@ -270,7 +270,7 @@ func (handler *PostHandler) QueryPosts(w http.ResponseWriter, r *http.Request) {
 	count, posts, customErr, statusCode, err := retrieveCountAndRecords(transactionCtx, tx, countQueryString,
 		countQueryArgs, dataQueryString, dataQueryArgs)
 	if err != nil {
-		utils.WriteAndLogError(w, customErr, statusCode, err)
+		utils.WriteAndLogError(transactionCtx, w, customErr, statusCode, err)
 		return
 	}
 
@@ -278,10 +278,10 @@ func (handler *PostHandler) QueryPosts(w http.ResponseWriter, r *http.Request) {
 	paginatedResponse := createPaginatedResponse(posts, lastPostId, limit, count)
 
 	if err := utils.CommitTransaction(w, tx, transactionCtx, cancel); err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
 	}
 
-	utils.WriteAndLogResponse(w, paginatedResponse, http.StatusOK)
+	utils.WriteAndLogResponse(transactionCtx, w, paginatedResponse, http.StatusOK)
 }
 
 // HandleGetFeedRequest Handles a request to get a feed, depending on the feed type
@@ -289,7 +289,7 @@ func (handler *PostHandler) HandleGetFeedRequest(w http.ResponseWriter, r *http.
 	// Begin a new transaction
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
 	if tx == nil || transactionCtx == nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, nil)
+		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, nil)
 		return
 	}
 	var err error
@@ -310,10 +310,10 @@ func (handler *PostHandler) HandleGetFeedRequest(w http.ResponseWriter, r *http.
 	paginatedResponse := createPaginatedResponse(posts, lastPostId, limit, records)
 
 	if err := utils.CommitTransaction(w, tx, transactionCtx, cancel); err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
 	}
 
-	utils.WriteAndLogResponse(w, paginatedResponse, http.StatusOK)
+	utils.WriteAndLogResponse(transactionCtx, w, paginatedResponse, http.StatusOK)
 }
 
 // createPaginatedResponse Creates a paginated response based on the given parameters
@@ -350,14 +350,14 @@ func determineFeedType(r *http.Request, w http.ResponseWriter, handler *PostHand
 	} else {
 		if !strings.HasPrefix(authHeader, "Bearer ") || len(authHeader) <= len("Bearer ") {
 			err = errors.New("invalid authorization header")
-			utils.WriteAndLogError(w, schemas.InvalidToken, http.StatusBadRequest, err)
+			utils.WriteAndLogError(r.Context(), w, schemas.InvalidToken, http.StatusBadRequest, err)
 			return false, nil, err
 		}
 
 		jwtToken := authHeader[len("Bearer "):]
 		claims, err = handler.JWTManager.ValidateJWT(jwtToken)
 		if err != nil {
-			utils.WriteAndLogError(w, schemas.Unauthorized, http.StatusUnauthorized, err)
+			utils.WriteAndLogError(r.Context(), w, schemas.Unauthorized, http.StatusUnauthorized, err)
 			return false, nil, err
 		}
 
@@ -425,7 +425,7 @@ func retrieveFeed(ctx context.Context, tx pgx.Tx, w http.ResponseWriter, r *http
 
 	count, posts, customErr, statusCode, err := retrieveCountAndRecords(ctx, tx, countQuery, countQueryArgs, dataQuery, dataQueryArgs)
 	if err != nil {
-		utils.WriteAndLogError(w, customErr, statusCode, err)
+		utils.WriteAndLogError(ctx, w, customErr, statusCode, err)
 		return nil, 0, "", "", err
 	}
 
