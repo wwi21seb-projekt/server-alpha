@@ -54,7 +54,7 @@ services:
       - "traefik.http.services.alpha-${PR_NUMBER:-main}.loadbalancer.server.port=8080"
     healthcheck:
       test: "wget --no-verbose --tries=1 --spider http://app:8080/health || exit 1"
-      interval: 10s
+      interval: 5m
       timeout: 5s
       retries: 5
     logging:

@@ -149,7 +149,6 @@ func traceIdMiddleware(next http.Handler) http.Handler {
 		ctx = context.WithValue(ctx, utils.TraceIdKey, traceId)
 		r = r.WithContext(ctx)
 		r.Header.Set("X-Trace-Id", traceId)
-		utils.LogMessageWithFields(ctx, "info", "Received request and attached trace ID: "+traceId)
 		next.ServeHTTP(w, r)
 	})
 }
