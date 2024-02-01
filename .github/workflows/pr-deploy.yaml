@@ -31,6 +31,7 @@ jobs:
     uses: ./.github/workflows/deploy.yaml
     with:
       preview: true
+      pr-number: ${{ github.event.pull_request.number }}
       docker-image: ${{ needs.preview-build-push-docker.outputs.docker-tag }}
       compose-name: pr_${{ github.event.pull_request.number }}
       ssh-script: |
