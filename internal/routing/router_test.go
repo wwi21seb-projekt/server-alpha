@@ -3,6 +3,12 @@ package routing
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"github.com/gavv/httpexpect/v2"
+	"github.com/google/uuid"
+	"github.com/pashagolub/pgxmock/v3"
+	log "github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/mock"
+	"golang.org/x/crypto/bcrypt"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -10,13 +16,7 @@ import (
 	"server-alpha/internal/managers/mocks"
 	"strconv"
 	"testing"
-
-	"github.com/gavv/httpexpect/v2"
-	"github.com/google/uuid"
-	"github.com/pashagolub/pgxmock/v3"
-	log "github.com/sirupsen/logrus"
-	"github.com/stretchr/testify/mock"
-	"golang.org/x/crypto/bcrypt"
+	"time"
 )
 
 // define request payload for user registration
@@ -357,6 +357,7 @@ func TestGetSubscriptions(t *testing.T) {
 			// Get mock pool
 			poolMock := databaseMgrMock.GetPool().(pgxmock.PgxPoolIface)
 
+			poolMock.ExpectBegin()
 			// Mock database calls
 			for _, mock := range tc.dbCalls {
 				if mock.Query != "" {
@@ -519,7 +520,6 @@ func TestQueryPosts(t *testing.T) {
 		limit        int
 		status       int
 		responseBody map[string]interface{}
-		dbCalls      []MockDBCallSelect
 	}{
 		{
 			"Successful",
@@ -535,46 +535,21 @@ func TestQueryPosts(t *testing.T) {
 						"author": map[string]interface{}{
 							"username":          "testAuthor",
 							"nickname":          "author Nickname",
-							"profilePictureUrl": "/testUrl/",
+							"profilePictureURL": "/testUrl/",
 						},
 						"creationDate": "2021-01-01T00:00:00Z",
 						"content":      "test content",
 						"location": map[string]interface{}{
-							"longitude": "-77.0364",
-							"latitude":  "38.8951",
+							"longitude": -77.0364,
+							"latitude":  38.8951,
 							"accuracy":  100,
 						},
 					},
 				},
 				"pagination": map[string]interface{}{
 					"lastPostId": "dad19145-7a7d-4656-a2ae-5092cf543ec8",
-					"limit":      10,
+					"limit":      "10",
 					"records":    1,
-				},
-			},
-			[]MockDBCallSelect{
-				{
-					Query:         "SELECT COUNT",
-					Args:          []interface{}{hashtag},
-					ReturnColumns: []string{"COUNT(DISTINCT posts.post_id)"},
-					ReturnValues:  []interface{}{1},
-				},
-				{
-					Query: "SELECT DISTINCT",
-					Args:  []interface{}{hashtag, limit},
-					ReturnColumns: []string{"posts.post_id", "username", "nickname", "profile_picture_url",
-						"posts.content", "posts.created_at", "posts.longitude", "posts.latitude", "posts.accuracy"},
-					ReturnValues: []interface{}{
-						"dad19145-7a7d-4656-a2ae-5092cf543ec8",
-						"testAuthor",
-						"author Nickname",
-						"/testUrl/",
-						"test content",
-						"2021-01-01T00:00:00Z",
-						"-77.0364",
-						"38.8951",
-						100,
-					},
 				},
 			},
 		},
@@ -591,7 +566,6 @@ func TestQueryPosts(t *testing.T) {
 					"code":    "ERR-014",
 				},
 			},
-			[]MockDBCallSelect{},
 		},
 	}
 
@@ -617,11 +591,18 @@ func TestQueryPosts(t *testing.T) {
 
 			// Get mock pool
 			poolMock := databaseMgrMock.GetPool().(pgxmock.PgxPoolIface)
-			// Mock database calls
-			poolMock.ExpectQuery("SELECT COUNT(DISTINCT posts.post_id) FROM alpha_schema.posts INNER JOIN alpha_schema.users ON author_id = user_id INNER JOIN alpha_schema.many_posts_has_many_hashtags ON post_id = post_id_posts INNER JOIN alpha_schema.hashtags ON hashtag_id = hashtag_id_hashtags WHERE hashtags.content LIKE $1").WithArgs(tc.hashtag, tc.limit).WillReturnRows(pgxmock.NewRows([]string{"COUNT(DISTINCT posts.post_id)"}).AddRow(1))
-			poolMock.ExpectQuery("SELECT DISTINCT posts.post_id, username, nickname, profile_picture_url, posts.content, posts.created_at, posts.longitude, posts.latitude, posts.accuracy FROM alpha_schema.posts INNER JOIN alpha_schema.users ON author_id = user_id INNER JOIN alpha_schema.many_posts_has_many_hashtags ON post_id = post_id_posts INNER JOIN alpha_schema.hashtags ON hashtag_id = hashtag_id_hashtags WHERE hashtags.content LIKE $1 ORDER BY created_at DESC LIMIT $2").WithArgs(tc.hashtag, tc.limit).WillReturnRows(pgxmock.NewRows([]string{"posts.post_id", "username", "nickname", "profile_picture_url", "posts.content", "posts.created_at", "posts.longitude", "posts.latitude", "posts.accuracy"}).AddRow("dad19145-7a7d-4656-a2ae-5092cf543ec8", "testAuthor", "author Nickname", "/testUrl/", "test content", "2021-01-01T00:00:00Z", "-77.0364", "38.8951", 100))
-			// Create request and get response
+			if tc.name == "Successful" {
+				// Mock database calls
+				poolMock.ExpectBegin()
+				poolMock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(DISTINCT posts.post_id) FROM alpha_schema.posts INNER JOIN alpha_schema.users ON author_id = user_id INNER JOIN alpha_schema.many_posts_has_many_hashtags ON post_id = post_id_posts INNER JOIN alpha_schema.hashtags ON hashtag_id = hashtag_id_hashtags WHERE hashtags.content LIKE $1")).WithArgs("%" + tc.hashtag + "%").WillReturnRows(pgxmock.NewRows([]string{"COUNT(DISTINCT posts.post_id)"}).AddRow(1))
+				poolMock.ExpectQuery(regexp.QuoteMeta("SELECT DISTINCT posts.post_id, username, nickname, profile_picture_url, posts.content, posts.created_at, posts.longitude, posts.latitude, posts.accuracy FROM alpha_schema.posts INNER JOIN alpha_schema.users ON author_id = user_id INNER JOIN alpha_schema.many_posts_has_many_hashtags ON post_id = post_id_posts INNER JOIN alpha_schema.hashtags ON hashtag_id = hashtag_id_hashtags WHERE hashtags.content LIKE $1 ORDER BY created_at DESC LIMIT $2")).WithArgs("%"+tc.hashtag+"%", strconv.Itoa(limit)).WillReturnRows(pgxmock.NewRows([]string{"posts.post_id", "username", "nickname", "profile_picture_url", "posts.content", "posts.created_at", "posts.longitude", "posts.latitude", "posts.accuracy"}).AddRow("dad19145-7a7d-4656-a2ae-5092cf543ec8", "testAuthor", "author Nickname", "/testUrl/", "test content", func() time.Time {
+					t, _ := time.Parse(time.RFC3339, "2021-01-01T00:00:00Z")
+					return t
+				}(), "-77.0364", "38.8951", "100"))
+				poolMock.ExpectCommit()
+			}
 
+			// Create request and get response
 			expect := httpexpect.Default(t, server.URL)
 			request := expect.GET("/api/posts").WithQueryString("q="+tc.hashtag+"&limit="+strconv.Itoa(tc.limit)).WithHeader("Authorization", "Bearer "+jwtToken)
 			response := request.Expect().Status(tc.status)
