@@ -1,13 +1,14 @@
 package routing
 
 import (
-	"github.com/go-chi/cors"
 	"net/http"
 	"server-alpha/internal/handlers"
 	"server-alpha/internal/managers"
 	"server-alpha/internal/schemas"
 	"server-alpha/internal/utils"
 	"time"
+
+	"github.com/go-chi/cors"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
