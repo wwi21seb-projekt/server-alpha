@@ -303,20 +303,6 @@ func TestGetSubscriptions(t *testing.T) {
 			},
 		},
 		{
-			"Bad Request",
-			userId,
-			"", // Empty username
-			"",
-			http.StatusBadRequest,
-			map[string]interface{}{
-				"error": map[string]interface{}{
-					"message": "The request body is invalid. Please check the request body and try again.",
-					"code":    "ERR-001",
-				},
-			},
-			[]MockDBCall{},
-		},
-		{
 			"Unauthorized",
 			userId,
 			username,

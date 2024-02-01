@@ -96,7 +96,6 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 		r.Post("/", subscriptionHdl.Subscribe)
 		r.Delete("/{subscriptionId}", subscriptionHdl.Unsubscribe)
 		r.Get("/{username}", subscriptionHdl.HandleGetSubscriptions)
-		r.Get("/", subscriptionHdl.HandleGetSubscriptions)
 	})
 
 	return r

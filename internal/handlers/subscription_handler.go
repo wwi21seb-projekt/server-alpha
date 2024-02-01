@@ -47,10 +47,6 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(w http.ResponseWriter
 
 	// Get the username from the path variable
 	username := chi.URLParam(r, utils.UsernameKey)
-	if username == "" {
-		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("username missing"))
-		return
-	}
 
 	// Get pagination parameters
 	offset, limit, err := utils.ParsePaginationParams(r)
