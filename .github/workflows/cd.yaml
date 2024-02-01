@@ -50,7 +50,7 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT }}
-          source: "deployments/docker-compose.prod.yml,deployments/server_alpha_db.sql"
+          source: "deployments/docker-compose.prod.yml,deployments/server_alpha_db.sql,deployments/provisioning/*,configs/*.yaml"
           target: "/home/serveralpha"
 
       - name: Setup SSH
@@ -61,6 +61,22 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT }}
           script: |
+            set_key_value() {
+              key="$1"
+              value="$2"
+              file="$3"
+      
+              if grep -q "^$key=" "$file"; then
+                sed -i "s/^$key=.*/$key=$value/" "$file"
+              else          
+                echo "$key=$value" >> "$file"
+              fi
+            }
+
+            set_key_value "SERVER_IMAGE" "ghcr.io/wwi21seb-projekt/server-alpha:main" ".env"
+            set_key_value "TRAFFIC_RULE" "Host(\`server-alpha.tech\`)" ".env"
+            set_key_value "MONITORING_TRAFFIC_RULE" "Host(\`monitoring.server-alpha.tech\`)" ".env"
+            
             docker pull ${{ steps.meta.outputs.tags }}
             docker-compose -f deployments/docker-compose.prod.yml -p server_alpha down
             docker-compose -f deployments/docker-compose.prod.yml -p server_alpha up -d

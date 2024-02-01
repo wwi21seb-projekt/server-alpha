@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"github.com/golang-jwt/jwt/v5"
 	log "github.com/sirupsen/logrus"
@@ -105,10 +106,28 @@ func (jm *JWTManager) JWTMiddleware(next http.Handler) http.Handler {
 
 func NewJWTManagerFromFile() (JWTMgr, error) {
 	log.Info("Initializing JWT manager using key pair from file...")
-	privateKeyPath := "private_key.pem"
-	publicKeyPath := "public_key.pem"
 
-	if _, err := os.Stat(privateKeyPath); os.IsNotExist(err) {
+	keysDir := os.Getenv("KEYS_DIR")
+	if keysDir == "" {
+		keysDir = "./keys" // Default keys directory
+	}
+	privateKeyPath := keysDir + "/private_key.pem"
+	publicKeyPath := keysDir + "/public_key.pem"
+
+	log.Println("Keys directory: ", keysDir)
+	log.Println("Private key path: ", privateKeyPath)
+	log.Println("Public key path: ", publicKeyPath)
+
+	// Create the keys directory if it doesn't exist
+	err := os.MkdirAll(keysDir, 0700)
+	if err != nil {
+		log.Errorf("failed to create keys directory: %v", err)
+		return nil, err
+	}
+
+	// Check if the private key exists
+	if _, err := os.Stat(privateKeyPath); errors.Is(err, os.ErrNotExist) {
+		// Generate a new key pair if the private key does not exist
 		err := generateAndStoreKeys(privateKeyPath, publicKeyPath)
 		if err != nil {
 			return nil, err
@@ -256,7 +275,7 @@ func generateAndStoreKeys(privateKeyPath, publicKeyPath string) error {
 		log.Errorf("failed to encode public key: %v", err)
 		return err
 	}
-	log.Info("Generated new key pair")
+	log.Info("Generated new key pair under these paths:\n" + privateKeyPath + "\n" + publicKeyPath)
 	return nil
 }
 

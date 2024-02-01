@@ -17,6 +17,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        tag: "{{.ImageName}}|{{.Name}}|{{.ImageFullID}}|{{.FullID}}"
 
   app:
     image: "${SERVER_IMAGE:-ghcr.io/wwi21seb-projekt/server-alpha:main}" # It's possible to specify the image to use in the environment, default is the latest image from the github container registry
@@ -34,25 +38,72 @@ services:
       - DB_USER=${DB_USER}
       - DB_PASS=${DB_PASS}
       - MAILGUN_API_KEY=${MAILGUN_API_KEY}
+      - KEYS_DIR=/go/app/keys
     volumes:
-      - ${PWD}/private_key.pem:/private_key.pem
-      - ${PWD}/public_key.pem:/public_key.pem
+      - ./keys:/go/app/keys
     networks:
       - traefik_proxy
       - default
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.alpha.entrypoints=websecure"
-      - "traefik.http.routers.alpha.rule=Host(`server-alpha.tech`)"
-      - "traefik.http.routers.alpha.tls=true"
-      - "traefik.http.routers.alpha.tls.certresolver=default"
-      - "traefik.http.routers.alpha.middlewares=secHeaders@file"
-      - "traefik.http.services.alpha.loadbalancer.server.port=8080" # Nicht den Host-Port verwenden sondern den internen Container port!
+      - "traefik.http.routers.alpha-${PR_NUMBER:-main}.entrypoints=websecure"
+      - "traefik.http.routers.alpha-${PR_NUMBER:-main}.rule=${TRAFFIC_RULE}"
+      - "traefik.http.routers.alpha-${PR_NUMBER:-main}.tls=true"
+      - "traefik.http.routers.alpha-${PR_NUMBER:-main}.tls.certresolver=default"
+      - "traefik.http.routers.alpha-${PR_NUMBER:-main}.middlewares=secHeaders@file"
+      - "traefik.http.services.alpha-${PR_NUMBER:-main}.loadbalancer.server.port=8080"
     healthcheck:
       test: "wget --no-verbose --tries=1 --spider http://app:8080/health || exit 1"
       interval: 10s
       timeout: 5s
       retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        tag: "{{.ImageName}}|{{.Name}}|{{.ImageFullID}}|{{.FullID}}"
+
+  loki:
+    image: grafana/loki:2.9.4
+    volumes:
+      - ../configs/loki-config.yaml:/etc/loki/local-config.yaml
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - loki
+
+  promtail:
+    image: grafana/promtail:2.9.4
+    volumes:
+      - /var/log:/var/log
+      - /var/lib/docker/containers:/var/lib/docker/containers
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ../configs/promtail-config.yaml:/etc/promtail/config.yaml
+    command: -config.file=/etc/promtail/config.yaml
+    networks:
+      - loki
+
+  grafana:
+    environment:
+      - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
+      - GF_AUTH_DISABLE_LOGIN_FORM=false
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/provisioning/dashboards/logs.json
+      - GF_SECURITY_ADMIN_USER=${ADMIN_USER}
+      - GF_SECURITY_ADMIN_PASSWORD=${ADMIN_PASSWORD}
+    volumes:
+      - ./provisioning/:/etc/grafana/provisioning/
+    image: grafana/grafana:latest
+    networks:
+      - loki
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.alpha-monitoring-${PR_NUMBER:-main}.entrypoints=websecure"
+      - "traefik.http.routers.alpha-monitoring-${PR_NUMBER:-main}.rule=${MONITORING_TRAFFIC_RULE}"
+      - "traefik.http.routers.alpha-monitoring-${PR_NUMBER:-main}.tls=true"
+      - "traefik.http.routers.alpha-monitoring-${PR_NUMBER:-main}.tls.certresolver=default"
+      - "traefik.http.routers.alpha-monitoring-${PR_NUMBER:-main}.middlewares=secHeaders@file"
+      - "traefik.http.services.alpha-monitoring-${PR_NUMBER:-main}.loadbalancer.server.port=3000"
 
 networks:
   traefik_proxy:
@@ -60,6 +111,8 @@ networks:
       name: traefik_proxy
   default:
     driver: bridge
+  loki:
+
 
 volumes:
   db_data:
