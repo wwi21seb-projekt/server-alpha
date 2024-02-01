@@ -48,7 +48,8 @@ func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 	// Begin a new transaction
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
 	if tx == nil || transactionCtx == nil {
-		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, nil)
+		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError,
+			errors.New("error beginning transaction"))
 		return
 	}
 	var err error
