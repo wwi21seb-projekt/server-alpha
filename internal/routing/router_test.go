@@ -555,7 +555,7 @@ func TestQueryPosts(t *testing.T) {
 			[]MockDBCallSelect{
 				{
 					Query:         "SELECT COUNT",
-					Args:          []interface{}{hashtag, limit},
+					Args:          []interface{}{hashtag},
 					ReturnColumns: []string{"COUNT(DISTINCT posts.post_id)"},
 					ReturnValues:  []interface{}{1},
 				},
