@@ -27,7 +27,7 @@ jobs:
               const owner = context.repo.owner;
               const repo = context.repo.repo;
               const message = `
-              ${{ github.event.inputs.message }}
+              ${{ inputs.message }}
               `;
   
               // Fetch all comments

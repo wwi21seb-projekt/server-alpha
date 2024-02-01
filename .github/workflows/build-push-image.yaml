@@ -4,9 +4,13 @@ run-name: Build&Push Image of ${{ github.event.inputs.preview == 'true' && 'Prev
 on:
   workflow_call:
     inputs:
-        preview:
-          required: true
-          type: boolean
+      preview:
+        required: true
+        type: boolean
+    outputs:
+      docker-tag:
+        description: 'The docker tag to use for the image'
+        value: ${{ jobs.build-push-docker.outputs.docker-tag }}
 
 env:
   REGISTRY: ghcr.io
@@ -15,6 +19,8 @@ env:
 jobs:
     build-push-docker:
         runs-on: ubuntu-latest
+        outputs:
+          docker-tag: ${{ steps.meta.outputs.tags }}
         permissions:
           contents: read
           packages: write

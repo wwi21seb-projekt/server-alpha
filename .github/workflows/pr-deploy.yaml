@@ -7,10 +7,6 @@ on:
     branches:
       - main
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
-
 permissions:
   contents: read
   packages: write
@@ -35,17 +31,17 @@ jobs:
     uses: ./.github/workflows/deploy.yaml
     with:
       preview: true
-      docker-image: ${{ steps.meta.outputs.tags }}
+      docker-image: ${{ needs.preview-build-push-docker.outputs.docker-tag }}
       compose-name: pr_${{ github.event.pull_request.number }}
       ssh-script: |
         cd ./preview/pr-${{ github.event.pull_request.number }}
         cp ~/.env .env
         mkdir -p ./deployments/keys
 
-        echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> .env
-        echo "SERVER_IMAGE=ghcr.io/wwi21seb-projekt/server-alpha:pr-${{ github.event.pull_request.number }}" >> .env
-        echo "TRAFFIC_RULE=Host(\`pr-${{ github.event.pull_request.number }}.preview.server-alpha.tech\`)" >> .env        
-        echo "MONITORING_TRAFFIC_RULE=Host(\`monitoring.pr-${{ github.event.pull_request.number }}.preview.server-alpha.tech\`)" >> .env        
+        set_key_value "PR_NUMBER" "${{ github.event.pull_request.number }}" ".env"
+        set_key_value "SERVER_IMAGE" "ghcr.io/wwi21seb-projekt/server-alpha:pr-${{ github.event.pull_request.number }}" ".env"   
+        set_key_value "TRAFFIC_RULE" "Host(\`pr-${{ github.event.pull_request.number }}.preview.server-alpha.tech\`)" ".env"
+        set_key_value "MONITORING_TRAFFIC_RULE" "Host(\`monitoring.pr-${{ github.event.pull_request.number }}.preview.server-alpha.tech\`)" ".env"   
 
         jq --arg pr_number "${{ github.event.pull_request.number }}" '
           .panels[] |=
@@ -56,8 +52,9 @@ jobs:
     secrets: inherit
 
   success-comment:
+    needs: [start-comment, preview-build-push-docker, preview-deploy]
     uses: ./.github/workflows/comment-pr.yaml
-    if: success()
+    if: ${{ needs.start-comment.result == 'success' && needs.preview-build-push-docker.result == 'success' && needs.preview-deploy.result == 'success'}}
     with:
       message: |
         :white_check_mark: Your changes have been deployed to a preview domain.
@@ -65,8 +62,9 @@ jobs:
         :warning: Please note that the preview will be deleted once the pull request is closed.
 
   failure-comment:
+    needs: [start-comment, preview-build-push-docker, preview-deploy]
     uses: ./.github/workflows/comment-pr.yaml
-    if: failure()
+    if: ${{ needs.start-comment.result == 'failure' || needs.preview-build-push-docker.result == 'failure' || needs.preview-deploy.result == 'failure' }}
     with:
       message: |
         :x: Your changes could not be deployed to a preview domain.

@@ -72,8 +72,8 @@ jobs:
               fi
             }
             
-            ${{ github.event.inputs.ssh-script }}
+            ${{ inputs.ssh-script }}
             
-            docker pull ${{ github.event.inputs.docker-image }}
-            docker-compose -f deployments/docker-compose.prod.yml -p ${{ github.event.inputs.compose-name }} down
-            docker-compose -f deployments/docker-compose.prod.yml -p ${{ github.event.inputs.compose-name }} up -d
+            docker pull ${{ inputs.docker-image }}
+            docker-compose -f deployments/docker-compose.prod.yml -p ${{ inputs.compose-name }} down
+            docker-compose -f deployments/docker-compose.prod.yml -p ${{ inputs.compose-name }} up -d
