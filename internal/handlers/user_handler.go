@@ -28,12 +28,11 @@ type UserHdl interface {
 	ResendToken(w http.ResponseWriter, r *http.Request)
 	LoginUser(w http.ResponseWriter, r *http.Request)
 	HandleGetUserRequest(w http.ResponseWriter, r *http.Request)
-	Subscribe(w http.ResponseWriter, r *http.Request)
-	Unsubscribe(w http.ResponseWriter, r *http.Request)
 	SearchUsers(w http.ResponseWriter, r *http.Request)
 	ChangeTrivialInformation(w http.ResponseWriter, r *http.Request)
 	ChangePassword(w http.ResponseWriter, r *http.Request)
 	RefreshToken(w http.ResponseWriter, r *http.Request)
+	RetrieveUserPosts(w http.ResponseWriter, r *http.Request)
 }
 
 type UserHandler struct {
@@ -471,147 +470,6 @@ func (handler *UserHandler) HandleGetUserRequest(w http.ResponseWriter, r *http.
 	utils.WriteAndLogResponse(w, user, http.StatusOK)
 }
 
-// Subscribe creates a new subscription between the current user and the username specified in the request body.
-func (handler *UserHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
-	// Begin a new transaction
-	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
-	if tx == nil || transactionCtx == nil {
-		return
-	}
-	var err error
-	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel, err)
-
-	// Decode the request body into the subscription request struct
-	subscriptionRequest := &schemas.SubscriptionRequest{}
-	if err := utils.DecodeRequestBody(w, r, subscriptionRequest); err != nil {
-		return
-	}
-
-	// Validate the subscription request struct using the validator
-	if err := utils.ValidateStruct(w, subscriptionRequest); err != nil {
-		return
-	}
-
-	// Get subscribeeId from request body
-	queryString := "SELECT user_id FROM alpha_schema.users WHERE username = $1"
-	row := tx.QueryRow(transactionCtx, queryString, subscriptionRequest.Following)
-	var subscribeeId string
-	if err := row.Scan(&subscribeeId); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			utils.WriteAndLogError(w, schemas.UserNotFound, http.StatusNotFound, err)
-			return
-		}
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-		return
-	}
-
-	// Get the user ID from the JWT token
-	claims := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
-	jwtUserId := claims["sub"].(string)
-	jwtUsername := claims["username"].(string)
-
-	// Check and throw error if the user wants to subscribe to himself
-	if jwtUserId == subscribeeId {
-		utils.WriteAndLogError(w, schemas.SubscriptionSelfFollow, http.StatusNotAcceptable, errors.New("user cannot subscribe to himself"))
-		return
-	}
-
-	// Check and throw error if the user is already subscribed to the user he wants to subscribe to
-	queryString = "SELECT subscription_id FROM alpha_schema.subscriptions WHERE subscriber_id = $1 AND subscribee_id = $2"
-	rows := tx.QueryRow(transactionCtx, queryString, jwtUserId, subscribeeId)
-	var subscriptionId uuid.UUID
-	if err := rows.Scan(&subscriptionId); err != nil {
-		if !errors.Is(err, pgx.ErrNoRows) {
-			utils.WriteAndLogError(w, schemas.SubscriptionAlreadyExists, http.StatusConflict, err)
-			return
-		}
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-		return
-
-	}
-
-	// Subscribe the user
-	queryString = "INSERT INTO alpha_schema.subscriptions (subscription_id, subscriber_id, subscribee_id, created_at) VALUES ($1, $2, $3, $4)"
-	subscriptionId = uuid.New()
-	createdAt := time.Now()
-	if _, err := tx.Exec(transactionCtx, queryString, subscriptionId, jwtUserId, subscribeeId, createdAt); err != nil {
-		log.Errorf("error while inserting subscription: %v", err)
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-		return
-	}
-
-	// Send the subscription to the user
-	subscriptionDto := &schemas.SubscriptionDTO{
-		SubscriptionId:   subscriptionId,
-		SubscriptionDate: createdAt.Format(time.RFC3339),
-		Following:        subscriptionRequest.Following,
-		Follower:         jwtUsername,
-	}
-
-	// Commit the transaction
-	if err := utils.CommitTransaction(w, tx, transactionCtx, cancel); err != nil {
-		return
-	}
-
-	// Send success response
-	utils.WriteAndLogResponse(w, subscriptionDto, http.StatusCreated)
-}
-
-// Unsubscribe removes a subscription between the current user and the user specified by the subscription ID.
-func (handler *UserHandler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
-	// Begin a new transaction
-	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
-	if tx == nil || transactionCtx == nil {
-		return
-	}
-	var err error
-	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel, err)
-
-	// Get the user ID from the JWT token
-	claims := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
-	jwtUserId := claims["sub"].(string)
-
-	// Get subscriptionId from path
-	subscriptionId := chi.URLParam(r, utils.SubscriptionIdKey)
-
-	// Get the subscribeeId and subscriberId from the subscriptionId
-	queryString := "SELECT subscriber_id, subscribee_id FROM alpha_schema.subscriptions WHERE subscription_id = $1"
-	row := tx.QueryRow(transactionCtx, queryString, subscriptionId)
-	var subscriberId, subscribeeId string
-	if err := row.Scan(&subscriberId, &subscribeeId); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			utils.WriteAndLogError(w, schemas.SubscriptionNotFound, http.StatusNotFound, errors.New("subscription not found"))
-			return
-		}
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-		return
-	}
-
-	// Check and throw error if user wants to delete someone else's subscription
-	if subscriberId != jwtUserId {
-		utils.WriteAndLogError(w, schemas.UnsubscribeForbidden, http.StatusForbidden, errors.New("you can only delete your own subscriptions"))
-		return
-	}
-
-	// Unsubscribe the user
-	queryString = "DELETE FROM alpha_schema.subscriptions WHERE subscriber_id = $1 AND subscribee_id = $2"
-	if _, err := tx.Exec(transactionCtx, queryString, jwtUserId, subscribeeId); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			utils.WriteAndLogError(w, schemas.SubscriptionNotFound, http.StatusNotFound, errors.New("subscription not found"))
-			return
-		}
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
-		return
-	}
-
-	// Commit the transaction
-	if err := utils.CommitTransaction(w, tx, transactionCtx, cancel); err != nil {
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
-}
-
 // SearchUsers returns a list of users that match the search query using query parameters using offset and limit.
 func (handler *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithDeadline(r.Context(), time.Now().Add(10*time.Second))
@@ -626,25 +484,9 @@ func (handler *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) 
 	// Get the search query from the query parameters
 	searchQuery := r.URL.Query().Get(utils.UsernameParamKey)
 
-	// Get the offset from the query parameters
-	offsetString := r.URL.Query().Get(utils.OffsetParamKey)
-	if offsetString == "" {
-		offsetString = "0"
-	}
-	offset, err := strconv.Atoi(offsetString)
+	offset, limit, err := utils.ParsePaginationParams(r)
 	if err != nil {
-		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("offset invalid"))
-		return
-	}
-
-	// Get the limit from the query parameters
-	limitString := r.URL.Query().Get(utils.LimitParamKey)
-	if limitString == "" {
-		limitString = "10"
-	}
-	limit, err := strconv.Atoi(limitString)
-	if err != nil {
-		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("limit invalid"))
+		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, err)
 		return
 	}
 
@@ -669,38 +511,7 @@ func (handler *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) 
 		users = append(users, user)
 	}
 
-	// get the number of records
-	records := len(users)
-
-	// Pre-checks on offset and limit
-	if offset > records {
-		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("offset invalid"))
-		return
-	}
-	end := offset + limit
-	if end > records {
-		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("limit invalid"))
-		return
-	}
-
-	// Get the subset
-	subset := users[offset:end]
-
-	// Create Pagination DTO
-	paginationDto := schemas.Pagination{
-		Offset:  offset,
-		Limit:   limit,
-		Records: records,
-	}
-
-	// Create Paginated Response
-	paginatedResponse := schemas.PaginatedResponse{
-		Records:    subset,
-		Pagination: paginationDto,
-	}
-
-	// Send success response
-	utils.WriteAndLogResponse(w, paginatedResponse, http.StatusOK)
+	utils.SendPaginatedResponse(w, users, offset, limit, len(users))
 }
 
 // RefreshToken refreshes the token pair of the user.
@@ -938,4 +749,65 @@ func generateTokenPair(handler *UserHandler, userId, username string) (*schemas.
 	}
 
 	return tokenPair, nil
+}
+
+func (handler *UserHandler) RetrieveUserPosts(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithDeadline(r.Context(), time.Now().Add(10*time.Second))
+	defer func() {
+		if err := ctx.Err(); err != nil {
+			log.Debug("Context error: ", err)
+		}
+		cancel()
+		log.Debug("Context canceled")
+	}()
+
+	// Get the username from URL parameter
+	username := chi.URLParam(r, utils.UsernameKey)
+
+	offset, limit, err := utils.ParsePaginationParams(r)
+	if err != nil {
+		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, err)
+		return
+	}
+
+	// Retrieve posts from database
+	queryString := "SELECT p.post_id, p.content, p.created_at, p.longitude, p.latitude, p.accuracy " +
+		"FROM alpha_schema.posts p JOIN alpha_schema.users u on p.author_id = u.user_id " +
+		"WHERE u.username = $1 ORDER BY p.created_at DESC"
+	rows, err := handler.DatabaseManager.GetPool().Query(ctx, queryString, username)
+	if err != nil {
+		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+	defer rows.Close()
+
+	// Create a list of posts
+	posts := make([]schemas.PostDTO, 0)
+	var createdAt pgtype.Timestamptz
+	var longitude, latitude pgtype.Float8
+	var accuracy pgtype.Int4
+
+	for rows.Next() {
+		post := schemas.PostDTO{}
+		if err := rows.Scan(&post.PostId, &post.Content, &createdAt, &longitude, &latitude, &accuracy); err != nil {
+			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+			return
+		}
+
+		if longitude.Valid && latitude.Valid {
+			post.Location = &schemas.LocationDTO{
+				Longitude: longitude.Float64,
+				Latitude:  latitude.Float64,
+			}
+		}
+
+		if accuracy.Valid {
+			post.Location.Accuracy = accuracy.Int32
+		}
+
+		post.CreationDate = createdAt.Time.Format(time.RFC3339)
+		posts = append(posts, post)
+	}
+
+	utils.SendPaginatedResponse(w, posts, offset, limit, len(posts))
 }

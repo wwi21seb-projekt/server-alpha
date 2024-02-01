@@ -4,6 +4,7 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/truemail-rb/truemail-go"
 	"regexp"
+	"server-alpha/internal/schemas"
 	"sync"
 	"unicode"
 	"unicode/utf8"
@@ -45,6 +46,7 @@ func registerCustomValidators(v *validator.Validate) {
 	_ = v.RegisterValidation("username_validation", usernameValidation)
 	_ = v.RegisterValidation("password_validation", passwordValidation)
 	_ = v.RegisterValidation("post_validation", postValidation)
+	_ = v.RegisterValidation("location_validation", locationValidation)
 }
 
 func usernameValidation(fl validator.FieldLevel) bool {
@@ -87,4 +89,31 @@ func passwordValidation(fl validator.FieldLevel) bool {
 func postValidation(fl validator.FieldLevel) bool {
 	value := fl.Field().String()
 	return utf8.ValidString(value)
+}
+
+func locationValidation(fl validator.FieldLevel) bool {
+	// Get the location struct from the field
+	location := fl.Field().Interface().(schemas.LocationDTO)
+
+	// If location is empty, return true since it is not required
+	if location == (schemas.LocationDTO{}) {
+		return true
+	}
+
+	// Check if the longitude is valid
+	if location.Longitude < -180 || location.Longitude > 180 {
+		return false
+	}
+
+	// Check if the latitude is valid
+	if location.Latitude < -90 || location.Latitude > 90 {
+		return false
+	}
+
+	// Check if the accuracy is valid
+	if location.Accuracy < 0 {
+		return false
+	}
+
+	return true
 }

@@ -1,14 +1,16 @@
 | Ticket                                   | METHODE                                 | Endpunkt                             | Beschreibung               | Implementiert |
 |------------------------------------------|-----------------------------------------|--------------------------------------|----------------------------|---------------|
+| ITERATION 1                              | ITERATION 1                             | ITERATION 1                          | ITERATION 1                | ITERATION 1   |
 | [Trello Ticket 1]                        | <span style="color:yellow">POST</span>  | `/users`                             | Create User                | ✅             |
 | [Trello Ticket 1]                        | <span style="color:yellow">POST</span>  | `/users/:username/activate`          | Activate User              | ✅             |
 | [Trello Ticket 1]                        | <span style="color:red">DELETE</span>   | `/users/:username/activate`          | Resend token               | ✅             |
 | [Trello Ticket 1]                        | <span style="color:yellow">POST</span>  | `/users/login`                       | Login                      | ✅             |
 | [Trello Ticket 2]                        | <span style="color:green">GET</span>    | `/imprint`                           | Impressum                  | ✅             |
+| ITERATION 2                              | ITERATION 2                             | ITERATION 2                          | ITERATION 2                | ITERATION 2   |
 | [Trello Ticket 3.1], [Trello Ticket 3.2] | <span style="color:yellow">POST</span>  | `/posts`                             | Create Posts               | ✅             |
 | [Trello Ticket 5]                        | <span style="color:green">GET</span>    | `/users/:username`                   | Visit User Profile         | ✅             |
 | [Trello Ticket 4]                        | <span style="color:green">GET</span>    | `/users?username&offset&limit`       | Search User                | ✅             |
-| [Trello Ticket 4]                        | <span style="color:green">GET</span>    | `/users/:username/feed?offset&limit` | User Feed                  | ❌             |
+| [Trello Ticket 4]                        | <span style="color:green">GET</span>    | `/users/:username/feed?offset&limit` | User Feed                  | ✅             |
 | [Trello Ticket 4]                        | <span style="color:yellow">POST</span>  | `/subscriptions`                     | Subscribe User             | ✅             |
 | [Trello Ticket 4]                        | <span style="color:red">DELETE</span>   | `/subscriptions/:subscriptionId`     | Unsubscribe User           | ✅             |
 | [Trello Ticket 6.1]                      | <span style="color:green">GET</span>    | `/feed?postId&limit&feedType`        | Get own or global feed     | ✅             |

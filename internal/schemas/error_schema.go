@@ -81,4 +81,12 @@ var (
 		Message: "You can only delete your own subscriptions.",
 		Code:    "ERR-018",
 	}
+	DeletePostForbidden = &CustomError{
+		Message: "You can only delete your own posts.",
+		Code:    "ERR-019",
+	}
+	PostNotFound = &CustomError{
+		Message: "The post was not found. Please check the post ID and try again.",
+		Code:    "ERR-020",
+	}
 )

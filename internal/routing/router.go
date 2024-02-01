@@ -3,8 +3,8 @@ package routing
 import (
 	"github.com/go-chi/cors"
 	"net/http"
+	"server-alpha/internal/handlers"
 	"server-alpha/internal/managers"
-	"server-alpha/internal/routing/handlers"
 	"server-alpha/internal/schemas"
 	"server-alpha/internal/utils"
 	"time"
@@ -37,8 +37,8 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 	// Initialize handlers
 	postHdl := handlers.NewPostHandler(&databaseMgr, &jwtMgr)
 
-	// Initialize user handlers
-	userHdl := handlers.NewUserHandler(&databaseMgr, &jwtMgr, &mailMgr)
+	// Initialize subscription handlers
+	subscriptionHdl := handlers.NewSubscriptionHandler(&databaseMgr)
 
 	// Initialize health check route
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -85,13 +85,16 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 	r.Route("/api/posts", func(r chi.Router) {
 		r.Use(jwtMgr.JWTMiddleware)
 		r.Post("/", postHdl.CreatePost)
+		r.Get("/", postHdl.QueryPosts)
+		r.Delete("/{postId}", postHdl.DeletePost)
 	})
 
 	// Intialize subscription routes
 	r.Route("/api/subscriptions", func(r chi.Router) {
 		r.Use(jwtMgr.JWTMiddleware)
-		r.Post("/", userHdl.Subscribe)
-		r.Delete("/{subscriptionId}", userHdl.Unsubscribe)
+		r.Post("/", subscriptionHdl.Subscribe)
+		r.Delete("/{subscriptionId}", subscriptionHdl.Unsubscribe)
+		r.Get("/{username}", subscriptionHdl.HandleGetSubscriptions)
 	})
 
 	return r
@@ -102,6 +105,7 @@ func userRouter(databaseMgr *managers.DatabaseMgr, jwtMgr managers.JWTMgr, mailM
 		userHdl := handlers.NewUserHandler(databaseMgr, &jwtMgr, mailMgr)
 
 		r.Post("/", userHdl.RegisterUser)
+		r.With(jwtMgr.JWTMiddleware).Get("/", userHdl.SearchUsers)
 		r.With(jwtMgr.JWTMiddleware).Put("/", userHdl.ChangeTrivialInformation)
 		r.With(jwtMgr.JWTMiddleware).Patch("/", userHdl.ChangePassword)
 		r.Post("/login", userHdl.LoginUser)
@@ -109,5 +113,6 @@ func userRouter(databaseMgr *managers.DatabaseMgr, jwtMgr managers.JWTMgr, mailM
 		r.Post("/{username}/activate", userHdl.ActivateUser)
 		r.Delete("/{username}/activate", userHdl.ResendToken)
 		r.With(jwtMgr.JWTMiddleware).Get("/{username}", userHdl.HandleGetUserRequest)
+		r.Get("/{username}/feed", userHdl.RetrieveUserPosts)
 	}
 }
