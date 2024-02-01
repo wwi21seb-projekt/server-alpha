@@ -3,12 +3,6 @@ package routing
 import (
 	"crypto/ed25519"
 	"crypto/rand"
-	"github.com/gavv/httpexpect/v2"
-	"github.com/google/uuid"
-	"github.com/pashagolub/pgxmock/v3"
-	log "github.com/sirupsen/logrus"
-	"github.com/stretchr/testify/mock"
-	"golang.org/x/crypto/bcrypt"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -17,6 +11,13 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/gavv/httpexpect/v2"
+	"github.com/google/uuid"
+	"github.com/pashagolub/pgxmock/v3"
+	log "github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/mock"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // define request payload for user registration
@@ -222,6 +223,64 @@ func TestUserLogin(t *testing.T) {
 			request := expect.POST("/api/users/login").WithJSON(tc.user)
 			request.Expect().Status(tc.status)
 
+			if err := poolMock.ExpectationsWereMet(); err != nil {
+				t.Errorf("there were unfulfilled expectations: %s", err)
+			}
+		})
+	}
+}
+
+func TestImprint(t *testing.T) {
+
+	testCases := []struct {
+		name         string
+		status       int
+		responseBody map[string]interface{}
+	}{
+		{
+			"Sucessful",
+			http.StatusOK,
+			map[string]interface{}{
+				"text": "Impressum\n\nEinen Löwen interessiert es nicht, was Schafe über ihn denken.\n\nDiese Webseite " +
+					"wird im Rahmen eines Universitätsprojektes angeboten von:\nKurs WWI21SEB\nDuale Hochschule " +
+					"Baden-Württemberg Mannheim\nCoblitzallee 1 – 9, 68163 Mannheim\n\nKontakt:\nE-Mail: " +
+					"team@mail.server-alpha.tech\n\nHaftungsausschluss:\nDer Kurs WWI21SEB und die DHBW Mannheim übernehmen " +
+					"keine Haftung für die Inhalte externer Links. Für den Inhalt der verlinkten Seiten sind ausschließlich " +
+					"deren Betreiber verantwortlich.\n\nDatenschutzbeauftragter der Hochschule:\nProf. Dr. Tobias Straub\n" +
+					"Friedrichstraße 14\n70174 Stuttgart\nE-Mail: straub@dhbw.de\n\nDie Nutzung von auf dieser Website " +
+					"veröffentlichten Kontaktdaten durch Dritte zur Übersendung von nicht ausdrücklich angeforderter Werbung " +
+					"und Informationsmaterialien wird hiermit ausdrücklich untersagt. Die Betreiber der Seiten behalten sich " +
+					"ausdrücklich rechtliche Schritte im Falle der unverlangten Zusendung von Werbeinformationen, etwa durch " +
+					"Spam-Mails, vor.\n\nDiese Webseite wurde im Rahmen eines Universitätsprojekts erstellt und dient " +
+					"ausschließlich zu nicht-kommerziellen Zwecken.",
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Setup mocks
+			databaseMgrMock, jwtManager, mailMgrMock := setupMocks(t)
+
+			// Initialize router
+			router := InitRouter(databaseMgrMock, mailMgrMock, jwtManager)
+
+			// Create test server
+			server := httptest.NewServer(router)
+			defer server.Close()
+
+			// Get mock pool
+			poolMock := databaseMgrMock.GetPool().(pgxmock.PgxPoolIface)
+
+			// Mock database calls
+
+			// Create request and get response
+			expect := httpexpect.Default(t, server.URL)
+			request := expect.GET("/api/imprint")
+			response := request.Expect().Status(tc.status)
+
+			// Assert response
+			response.JSON().IsEqual(tc.responseBody)
+			// Check if all expectations were met
 			if err := poolMock.ExpectationsWereMet(); err != nil {
 				t.Errorf("there were unfulfilled expectations: %s", err)
 			}
