@@ -547,9 +547,9 @@ func TestQueryPosts(t *testing.T) {
 					},
 				},
 				"pagination": map[string]interface{}{
-					"limit":   10,
-					"offset":  0,
-					"records": 1,
+					"lastPostId": "dad19145-7a7d-4656-a2ae-5092cf543ec8",
+					"limit":      10,
+					"records":    1,
 				},
 			},
 			[]MockDBCallSelect{
@@ -625,10 +625,10 @@ func TestQueryPosts(t *testing.T) {
 			}
 
 			// Create request and get response
-			expect := httpexpect.Default(t, server.URL)
-			request := expect.GET("/api/posts?"+tc.hashtag+"&"+strconv.Itoa(tc.limit)).WithHeader("Authorization", "Bearer "+jwtToken)
-			response := request.Expect().Status(tc.status)
 
+			expect := httpexpect.Default(t, server.URL)
+			request := expect.GET("/api/posts").WithQueryString("q="+tc.hashtag+"&limit="+strconv.Itoa(tc.limit)).WithHeader("Authorization", "Bearer "+jwtToken)
+			response := request.Expect().Status(tc.status)
 			// Assert response
 			response.JSON().IsEqual(tc.responseBody)
 
