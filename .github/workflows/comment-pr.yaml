@@ -1,0 +1,60 @@
+name: 'Comment on PR'
+run-name: 'Comment on PR'
+
+on:
+  workflow_call:
+    inputs:
+      message:
+        required: true
+        type: string
+
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Comment PR
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+              const issue_number = context.issue.number;
+              const owner = context.repo.owner;
+              const repo = context.repo.repo;
+              const message = `
+              ${{ github.event.inputs.message }}
+              `;
+  
+              // Fetch all comments
+              const comments = await github.rest.issues.listComments({
+                owner: owner,
+                repo: repo,
+                issue_number: issue_number
+              });
+  
+              // Find the previous bot comment
+              const botComment = comments.data.find(comment => comment.user.login === 'github-actions[bot]');
+  
+              // If it exists, update it
+              if (botComment) {
+                await github.rest.issues.updateComment({
+                    owner: owner,
+                    repo: repo,
+                    comment_id: botComment.id,
+                    body: message
+                });
+              } 
+              // Else, create a new one
+              else {
+                const comment = await github.rest.issues.createComment({
+                    owner: owner,
+                    repo: repo,
+                    issue_number: issue_number,
+                    body: message
+                });
+              }

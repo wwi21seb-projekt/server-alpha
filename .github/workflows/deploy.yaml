@@ -1,0 +1,79 @@
+name: Deploy to Server
+run-name: ${{ github.event.inputs.preview == 'true' && 'Deploy to Preview' || 'Deploy to Production' }}
+
+on:
+  workflow_call:
+    inputs:
+      preview:
+        required: true
+        type: boolean
+        description: 'Whether to deploy to the preview domain or not'
+      ssh-script:
+        required: true
+        type: string
+        description: 'The script to run on the server to set the environment variables'
+      docker-image:
+        required: true
+        type: string
+        description: 'The docker image to use for the server'
+      compose-name:
+        required: true
+        type: string
+        description: 'The name of the docker-compose project to use'
+    secrets:
+      DEPLOY_HOST:
+        required: true
+        description: 'The hostname or IP address of the server to deploy to'
+      DEPLOY_USER:
+        required: true
+        description: 'The username to use for SSH authentication'
+      DEPLOY_SSH_KEY:
+        required: true
+        description: 'The SSH private key to use for authentication'
+      DEPLOY_PORT:
+        required: true
+        description: 'The SSH port to use for authentication'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Copy files to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          source: "deployments/docker-compose.prod.yml,deployments/server_alpha_db.sql,deployments/provisioning/*,configs/*.yaml"
+          target: "/home/serveralpha/preview/pr-${{ github.event.pull_request.number }}"
+
+      - name: Setup SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          script: |
+            set_key_value() {
+              key="$1"
+              value="$2"
+              file="$3"
+            
+              if grep -q "^$key=" "$file"; then
+                sed -i "s/^$key=.*/$key=$value/" "$file"
+              else          
+                echo "$key=$value" >> "$file"
+              fi
+            }
+            
+            ${{ github.event.inputs.ssh-script }}
+            
+            docker pull ${{ github.event.inputs.docker-image }}
+            docker-compose -f deployments/docker-compose.prod.yml -p ${{ github.event.inputs.compose-name }} down
+            docker-compose -f deployments/docker-compose.prod.yml -p ${{ github.event.inputs.compose-name }} up -d
