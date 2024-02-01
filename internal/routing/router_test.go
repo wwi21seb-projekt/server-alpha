@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"server-alpha/internal/managers"
 	"server-alpha/internal/managers/mocks"
+	"strconv"
 	"testing"
 
 	"github.com/gavv/httpexpect/v2"
@@ -26,6 +27,13 @@ type User struct {
 	Password       string `json:"password"`
 	HashedPassword string `json:"hashed_password"`
 	Email          string `json:"email"`
+}
+
+type MockDBCallSelect struct {
+	Query         string
+	Args          []interface{}
+	ReturnColumns []string
+	ReturnValues  []interface{}
 }
 
 func setupMocks(t *testing.T) (*mocks.MockDatabaseManager, managers.JWTMgr, *mocks.MockMailManager) {
@@ -221,29 +229,20 @@ func TestUserLogin(t *testing.T) {
 	}
 }
 
-type MockDBCall struct {
-	Query         string
-	Args          []interface{}
-	ReturnColumns []string
-	ReturnValues  []interface{}
-}
-
-type testCaseStructureSubscription struct {
-	name         string
-	userId       string
-	username     string
-	jwtToken     string
-	status       int
-	responseBody map[string]interface{}
-	dbCalls      []MockDBCall
-}
-
 func TestGetSubscriptions(t *testing.T) {
 	userId := "1752e5cc-77a4-4913-9924-63a439654a8e"
 	username := "testUser"
 
 	// Define test cases
-	testCases := []testCaseStructureSubscription{
+	testCases := []struct {
+		name         string
+		userId       string
+		username     string
+		jwtToken     string
+		status       int
+		responseBody map[string]interface{}
+		dbCalls      []MockDBCallSelect
+	}{
 		{
 			"Successful",
 			userId,
@@ -266,7 +265,7 @@ func TestGetSubscriptions(t *testing.T) {
 					"records": 1,
 				},
 			},
-			[]MockDBCall{
+			[]MockDBCallSelect{
 				{
 					Query:         "SELECT",
 					Args:          []interface{}{username},
@@ -314,7 +313,7 @@ func TestGetSubscriptions(t *testing.T) {
 					"code":    "ERR-014",
 				},
 			},
-			[]MockDBCall{},
+			[]MockDBCallSelect{},
 		},
 		{
 			"User not found",
@@ -328,7 +327,7 @@ func TestGetSubscriptions(t *testing.T) {
 					"code":    "ERR-004",
 				},
 			},
-			[]MockDBCall{
+			[]MockDBCallSelect{
 				{
 					Query:         "SELECT",
 					Args:          []interface{}{username},
@@ -386,121 +385,257 @@ func TestGetSubscriptions(t *testing.T) {
 }
 
 func TestDeletePost(t *testing.T) {
-    userId := "1752e5cc-77a4-4913-9924-63a439654a8e"
-    username := "testUser"
-    postId := "4d9e0a1d-faa6-473d-a5cb-fadabb2db590"
- 
-    testCases := []struct {
-        name         string
-        status       int
-        userId       string
-        username     string
-        postId       string
-        responseBody map[string]interface{}
-    }{
-        {
-            "SucessfulDelete",
-            http.StatusNoContent,
-            userId,
-            username,
-            postId,
-            nil,
-        },
-        {
-            "UnauthoriedDelete",
-            http.StatusUnauthorized,
-            "",
-            "",
-            postId,
-            map[string]interface{}{
-                "error": map[string]interface{}{
-                    "message": "The request is unauthorized. Please login to your account.",
-                    "code":    "ERR-014",
-                },
-            },
-        },
-        {
-            "ForbiddenDelete",
-            http.StatusForbidden,
-            userId,
-            username,
-            postId,
-            map[string]interface{}{
-                "error": map[string]interface{}{
-                    "message": "You can only delete your own posts.",
-                    "code":    "ERR-019",
-                },
-            },
-        },
-        {
-            "PostNotFound",
-            http.StatusNotFound,
-            userId,
-            username,
-            postId,
-            map[string]interface{}{
-                "error": map[string]interface{}{
-                    "message": "The post was not found. Please check the post ID and try again.",
-                    "code":    "ERR-020",
-                },
-            },
-        },
-    }
- 
-    for _, tc := range testCases {
-        t.Run(tc.name, func(t *testing.T) {
-            // Setup mocks
-            databaseMgrMock, jwtManager, mailMgrMock := setupMocks(t)
- 
-            // Initialize router
-            router := InitRouter(databaseMgrMock, mailMgrMock, jwtManager)
- 
-            // Create test server
-            server := httptest.NewServer(router)
-            defer server.Close()
- 
-            // Generate JWT token if user is logged in
-            jwtToken := ""
-            if tc.userId == "" && tc.username == "" {
-                jwtToken = "invalidToken"
-            } else {
-                jwtToken, _ = jwtManager.GenerateJWT(tc.userId, tc.username, false)
-            }
- 
-            // Get mock pool
-            poolMock := databaseMgrMock.GetPool().(pgxmock.PgxPoolIface)
- 
-            // Mock database calls
- 
-            switch tc.name {
-            case "SucessfulDelete":
-                poolMock.ExpectBegin()
-                poolMock.ExpectQuery("SELECT author_id, content FROM alpha_schema.posts").WithArgs(tc.postId).WillReturnRows(pgxmock.NewRows([]string{"author_id", "content"}).AddRow(tc.userId, "#test"))
-                poolMock.ExpectExec("DELETE FROM alpha_schema.posts").WithArgs(tc.postId).WillReturnResult(pgxmock.NewResult("DELETE", 1))
-                poolMock.ExpectExec("DELETE FROM alpha_schema.hashtags").WithArgs(pgxmock.AnyArg()).WillReturnResult(pgxmock.NewResult("DELETE", 1))
-                poolMock.ExpectCommit()
-            case "ForbiddenDelete":
-                poolMock.ExpectBegin()
-                poolMock.ExpectQuery("SELECT author_id, content FROM alpha_schema.posts").WithArgs(tc.postId).WillReturnRows(pgxmock.NewRows([]string{"author_id", "content"}).AddRow("", "#test"))
-            case "PostNotFound":
-                poolMock.ExpectBegin()
-                poolMock.ExpectQuery("SELECT author_id, content FROM alpha_schema.posts").WithArgs(tc.postId).WillReturnRows(pgxmock.NewRows([]string{"author_id", "content"}))
-            }
- 
-            // Create request and get response
-            expect := httpexpect.Default(t, server.URL)
-            request := expect.DELETE("/api/posts/"+tc.postId).WithHeader("Authorization", "Bearer "+jwtToken)
-            response := request.Expect().Status(tc.status)
- 
-            // Assert response
-            if response.Raw().StatusCode != http.StatusNoContent {
-                response.JSON().IsEqual(tc.responseBody)
-            }
- 
-            // Check if all expectations were met
-            if err := poolMock.ExpectationsWereMet(); err != nil {
-                t.Errorf("there were unfulfilled expectations: %s", err)
-            }
-        })
-    }
+	userId := "1752e5cc-77a4-4913-9924-63a439654a8e"
+	username := "testUser"
+	postId := "4d9e0a1d-faa6-473d-a5cb-fadabb2db590"
+
+	testCases := []struct {
+		name         string
+		status       int
+		userId       string
+		username     string
+		postId       string
+		responseBody map[string]interface{}
+	}{
+		{
+			"SucessfulDelete",
+			http.StatusNoContent,
+			userId,
+			username,
+			postId,
+			nil,
+		},
+		{
+			"UnauthoriedDelete",
+			http.StatusUnauthorized,
+			"",
+			"",
+			postId,
+			map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": "The request is unauthorized. Please login to your account.",
+					"code":    "ERR-014",
+				},
+			},
+		},
+		{
+			"ForbiddenDelete",
+			http.StatusForbidden,
+			userId,
+			username,
+			postId,
+			map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": "You can only delete your own posts.",
+					"code":    "ERR-019",
+				},
+			},
+		},
+		{
+			"PostNotFound",
+			http.StatusNotFound,
+			userId,
+			username,
+			postId,
+			map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": "The post was not found. Please check the post ID and try again.",
+					"code":    "ERR-020",
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Setup mocks
+			databaseMgrMock, jwtManager, mailMgrMock := setupMocks(t)
+
+			// Initialize router
+			router := InitRouter(databaseMgrMock, mailMgrMock, jwtManager)
+
+			// Create test server
+			server := httptest.NewServer(router)
+			defer server.Close()
+
+			// Generate JWT token if user is logged in
+			jwtToken := ""
+			if tc.userId == "" && tc.username == "" {
+				jwtToken = "invalidToken"
+			} else {
+				jwtToken, _ = jwtManager.GenerateJWT(tc.userId, tc.username, false)
+			}
+
+			// Get mock pool
+			poolMock := databaseMgrMock.GetPool().(pgxmock.PgxPoolIface)
+
+			// Mock database calls
+
+			switch tc.name {
+			case "SucessfulDelete":
+				poolMock.ExpectBegin()
+				poolMock.ExpectQuery("SELECT author_id, content FROM alpha_schema.posts").WithArgs(tc.postId).WillReturnRows(pgxmock.NewRows([]string{"author_id", "content"}).AddRow(tc.userId, "#test"))
+				poolMock.ExpectExec("DELETE FROM alpha_schema.posts").WithArgs(tc.postId).WillReturnResult(pgxmock.NewResult("DELETE", 1))
+				poolMock.ExpectExec("DELETE FROM alpha_schema.hashtags").WithArgs(pgxmock.AnyArg()).WillReturnResult(pgxmock.NewResult("DELETE", 1))
+				poolMock.ExpectCommit()
+			case "ForbiddenDelete":
+				poolMock.ExpectBegin()
+				poolMock.ExpectQuery("SELECT author_id, content FROM alpha_schema.posts").WithArgs(tc.postId).WillReturnRows(pgxmock.NewRows([]string{"author_id", "content"}).AddRow("", "#test"))
+			case "PostNotFound":
+				poolMock.ExpectBegin()
+				poolMock.ExpectQuery("SELECT author_id, content FROM alpha_schema.posts").WithArgs(tc.postId).WillReturnRows(pgxmock.NewRows([]string{"author_id", "content"}))
+			}
+
+			// Create request and get response
+			expect := httpexpect.Default(t, server.URL)
+			request := expect.DELETE("/api/posts/"+tc.postId).WithHeader("Authorization", "Bearer "+jwtToken)
+			response := request.Expect().Status(tc.status)
+
+			// Assert response
+			if response.Raw().StatusCode != http.StatusNoContent {
+				response.JSON().IsEqual(tc.responseBody)
+			}
+
+			// Check if all expectations were met
+			if err := poolMock.ExpectationsWereMet(); err != nil {
+				t.Errorf("there were unfulfilled expectations: %s", err)
+			}
+		})
+	}
+}
+
+func TestQueryPosts(t *testing.T) {
+	userId := "1752e5cc-77a4-4913-9924-63a439654a8e"
+	username := "testUser"
+	hashtag := "alpha"
+	limit := 10
+
+	// Define test cases
+	testCases := []struct {
+		name         string
+		userId       string
+		username     string
+		hashtag      string
+		limit        int
+		status       int
+		responseBody map[string]interface{}
+		dbCalls      []MockDBCallSelect
+	}{
+		{
+			"Successful",
+			userId,
+			username,
+			hashtag,
+			limit,
+			http.StatusOK,
+			map[string]interface{}{
+				"records": []map[string]interface{}{
+					{
+						"postId": "dad19145-7a7d-4656-a2ae-5092cf543ec8",
+						"author": map[string]interface{}{
+							"username":          "testAuthor",
+							"nickname":          "author Nickname",
+							"profilePictureUrl": "/testUrl/",
+						},
+						"creationDate": "2021-01-01T00:00:00Z",
+						"content":      "test content",
+						"location": map[string]interface{}{
+							"longitude": "-77.0364",
+							"latitude":  "38.8951",
+							"accuracy":  100,
+						},
+					},
+				},
+				"pagination": map[string]interface{}{
+					"limit":   10,
+					"offset":  0,
+					"records": 1,
+				},
+			},
+			[]MockDBCallSelect{
+				{
+					Query: "SELECT",
+					Args:  []interface{}{hashtag, limit},
+					ReturnColumns: []string{"posts.post_id", "username", "nickname", "profile_picture_url",
+						"posts.content", "posts.created_at", "posts.longitude", "posts.latitude", "posts.accuracy"},
+					ReturnValues: []interface{}{
+						"dad19145-7a7d-4656-a2ae-5092cf543ec8",
+						"testAuthor",
+						"author Nickname",
+						"/testUrl/",
+						"test content",
+						"2021-01-01T00:00:00Z",
+						"-77.0364",
+						"38.8951",
+						100,
+					},
+				},
+			},
+		},
+		{
+			"Unauthorized",
+			"",
+			"",
+			hashtag,
+			limit,
+			http.StatusUnauthorized,
+			map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": "The request is unauthorized. Please login to your account.",
+					"code":    "ERR-014",
+				},
+			},
+			[]MockDBCallSelect{},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Setup mocks
+			databaseMgrMock, jwtManager, mailMgrMock := setupMocks(t)
+
+			// Initialize router
+			router := InitRouter(databaseMgrMock, mailMgrMock, jwtManager)
+
+			// Create test server
+			server := httptest.NewServer(router)
+			defer server.Close()
+
+			// Generate JWT token if not already set
+			jwtToken := ""
+			if tc.userId == "" && tc.username == "" {
+				jwtToken = "invalidToken"
+			} else {
+				jwtToken, _ = jwtManager.GenerateJWT(tc.userId, tc.username, false)
+			}
+
+			// Get mock pool
+			poolMock := databaseMgrMock.GetPool().(pgxmock.PgxPoolIface)
+
+			// Mock database calls
+			for _, mock := range tc.dbCalls {
+				if mock.Query != "" {
+					rows := pgxmock.NewRows(mock.ReturnColumns)
+					if len(mock.ReturnValues) == len(mock.ReturnColumns) {
+						rows.AddRow(mock.ReturnValues...)
+					}
+
+					poolMock.ExpectQuery(regexp.QuoteMeta(mock.Query)).WithArgs(mock.Args...).WillReturnRows(rows)
+				}
+			}
+
+			// Create request and get response
+			expect := httpexpect.Default(t, server.URL)
+			request := expect.GET("/api/posts?"+tc.hashtag+"&"+strconv.Itoa(tc.limit)).WithHeader("Authorization", "Bearer "+jwtToken)
+			response := request.Expect().Status(tc.status)
+
+			// Assert response
+			response.JSON().IsEqual(tc.responseBody)
+
+			// Check if all expectations were met
+			if err := poolMock.ExpectationsWereMet(); err != nil {
+				t.Errorf("there were unfulfilled expectations: %s", err)
+			}
+		})
+	}
 }
