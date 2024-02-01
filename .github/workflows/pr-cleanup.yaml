@@ -1,4 +1,5 @@
 name: PR Cleanup
+run-name: Cleanup PR-${{ github.event.pull_request.number }} Preview
 
 on:
   pull_request:

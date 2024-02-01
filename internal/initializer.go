@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"server-alpha/internal/managers"
+	"server-alpha/internal/utils"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -23,14 +24,14 @@ const (
 func Init() {
 	err := godotenv.Load(envFile)
 	if err != nil {
-		log.Info("No .env file found, using environment variables from system")
+		utils.LogMessage("info", "No .env file found, using environment variables from system")
 	} else {
-		log.Info("Loaded environment variables from .env file")
+		utils.LogMessage("info", "Loaded environment variables from .env file")
 	}
 
 	logLevel := os.Getenv("LOG_LEVEL")
 	setLogLevel(logLevel)
-	log.Debugf("Environment variables: %v", os.Environ())
+	utils.LogMessage("debug", fmt.Sprintf("Environment variables: %v", os.Environ()))
 
 	// Connect to database
 	pool := initializeDatabase()
@@ -51,7 +52,7 @@ func Init() {
 
 	// Initialize router
 	r := routing.InitRouter(databaseMgr, mailMgr, jwtMgr)
-	log.Println("Initialized router")
+	utils.LogMessage("info", "Initialized router")
 
 	// Handle interrupt signal gracefully
 	go func() {
@@ -59,20 +60,21 @@ func Init() {
 		signal.Notify(c, os.Interrupt)
 
 		<-c
-		log.Println("Server shutting down...")
+		utils.LogMessage("info", "Shutting down server...")
 		os.Exit(0)
 	}()
 
 	// Start server on the specified port
-	log.Printf("Starting server on port %s...\n", port)
+	utils.LogMessage("info", fmt.Sprintf("Starting server on port %s...", port))
 	err = http.ListenAndServe(port, r)
 	if err != nil {
-		log.Fatal("Error starting server: ", err)
+		utils.LogMessage("fatal", "Error starting server")
+		panic(err)
 	}
 }
 
 func initializeDatabase() *pgxpool.Pool {
-	log.Info("Initializing database")
+	utils.LogMessage("info", "Initializing database")
 
 	var (
 		dbHost     = os.Getenv("DB_HOST")
@@ -83,13 +85,15 @@ func initializeDatabase() *pgxpool.Pool {
 	)
 
 	if dbHost == "" || dbPort == "" || dbUser == "" || dbPassword == "" || dbName == "" {
-		log.Fatal("database environment variables not set")
+		utils.LogMessage("fatal", "Database environment variables not set")
+		panic("Database environment variables not set")
 	}
 
 	url := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable", dbHost, dbPort, dbUser, dbPassword, dbName)
 	config, err := pgxpool.ParseConfig(url)
 	if err != nil {
-		log.Fatal("error configuring database: ", err)
+		utils.LogMessage("fatal", "Error configuring database")
+		panic(err)
 	}
 
 	config.MinConns = 5
@@ -99,9 +103,10 @@ func initializeDatabase() *pgxpool.Pool {
 
 	pool, err := pgxpool.NewWithConfig(context.Background(), config)
 	if err != nil {
-		log.Fatal("error connecting to database: ", err)
+		utils.LogMessage("fatal", "Error connecting to database")
+		panic(err)
 	}
-	log.Info("Connected to database")
+	utils.LogMessage("info", "Initialized database")
 	return pool
 }
 
@@ -122,7 +127,6 @@ func setLogLevel(logLevel string) {
 	}
 
 	log.SetReportCaller(true)
-
+	log.SetFormatter(&utils.CustomTextFormatter{})
 	log.SetOutput(os.Stdout)
-
 }
