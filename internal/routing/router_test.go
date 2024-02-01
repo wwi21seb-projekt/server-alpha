@@ -554,7 +554,13 @@ func TestQueryPosts(t *testing.T) {
 			},
 			[]MockDBCallSelect{
 				{
-					Query: "SELECT",
+					Query:         "SELECT COUNT",
+					Args:          []interface{}{hashtag, limit},
+					ReturnColumns: []string{"COUNT(DISTINCT posts.post_id)"},
+					ReturnValues:  []interface{}{1},
+				},
+				{
+					Query: "SELECT DISTINCT",
 					Args:  []interface{}{hashtag, limit},
 					ReturnColumns: []string{"posts.post_id", "username", "nickname", "profile_picture_url",
 						"posts.content", "posts.created_at", "posts.longitude", "posts.latitude", "posts.accuracy"},
@@ -611,19 +617,9 @@ func TestQueryPosts(t *testing.T) {
 
 			// Get mock pool
 			poolMock := databaseMgrMock.GetPool().(pgxmock.PgxPoolIface)
-
 			// Mock database calls
-			for _, mock := range tc.dbCalls {
-				if mock.Query != "" {
-					rows := pgxmock.NewRows(mock.ReturnColumns)
-					if len(mock.ReturnValues) == len(mock.ReturnColumns) {
-						rows.AddRow(mock.ReturnValues...)
-					}
-
-					poolMock.ExpectQuery(regexp.QuoteMeta(mock.Query)).WithArgs(mock.Args...).WillReturnRows(rows)
-				}
-			}
-
+			poolMock.ExpectQuery("SELECT COUNT(DISTINCT posts.post_id) FROM alpha_schema.posts INNER JOIN alpha_schema.users ON author_id = user_id INNER JOIN alpha_schema.many_posts_has_many_hashtags ON post_id = post_id_posts INNER JOIN alpha_schema.hashtags ON hashtag_id = hashtag_id_hashtags WHERE hashtags.content LIKE $1").WithArgs(tc.hashtag, tc.limit).WillReturnRows(pgxmock.NewRows([]string{"COUNT(DISTINCT posts.post_id)"}).AddRow(1))
+			poolMock.ExpectQuery("SELECT DISTINCT posts.post_id, username, nickname, profile_picture_url, posts.content, posts.created_at, posts.longitude, posts.latitude, posts.accuracy FROM alpha_schema.posts INNER JOIN alpha_schema.users ON author_id = user_id INNER JOIN alpha_schema.many_posts_has_many_hashtags ON post_id = post_id_posts INNER JOIN alpha_schema.hashtags ON hashtag_id = hashtag_id_hashtags WHERE hashtags.content LIKE $1 ORDER BY created_at DESC LIMIT $2").WithArgs(tc.hashtag, tc.limit).WillReturnRows(pgxmock.NewRows([]string{"posts.post_id", "username", "nickname", "profile_picture_url", "posts.content", "posts.created_at", "posts.longitude", "posts.latitude", "posts.accuracy"}).AddRow("dad19145-7a7d-4656-a2ae-5092cf543ec8", "testAuthor", "author Nickname", "/testUrl/", "test content", "2021-01-01T00:00:00Z", "-77.0364", "38.8951", 100))
 			// Create request and get response
 
 			expect := httpexpect.Default(t, server.URL)
