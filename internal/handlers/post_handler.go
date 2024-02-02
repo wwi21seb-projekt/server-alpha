@@ -34,6 +34,7 @@ type PostHandler struct {
 }
 
 var hashtagRegex = regexp.MustCompile(`#\w+`)
+var transactionErr = errors.New("error beginning transaction")
 
 func NewPostHandler(databaseManager *managers.DatabaseMgr, jwtManager *managers.JWTMgr) PostHdl {
 	return &PostHandler{
@@ -49,7 +50,7 @@ func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
 	if tx == nil || transactionCtx == nil {
 		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError,
-			errors.New("error beginning transaction"))
+			transactionErr)
 		return
 	}
 	var err error
@@ -160,7 +161,8 @@ func (handler *PostHandler) DeletePost(w http.ResponseWriter, r *http.Request) {
 	// Begin a new transaction
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
 	if tx == nil || transactionCtx == nil {
-		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, nil)
+		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError,
+			transactionErr)
 		return
 	}
 	var err error
@@ -190,7 +192,8 @@ func (handler *PostHandler) DeletePost(w http.ResponseWriter, r *http.Request) {
 
 	userId := claims["sub"].(string)
 	if userId != authorId {
-		utils.WriteAndLogError(transactionCtx, w, schemas.DeletePostForbidden, http.StatusForbidden, errors.New("user is not the author of the post"))
+		utils.WriteAndLogError(transactionCtx, w, schemas.DeletePostForbidden, http.StatusForbidden,
+			errors.New("user is not the author of the post"))
 		return
 	}
 
@@ -229,7 +232,8 @@ func (handler *PostHandler) DeletePost(w http.ResponseWriter, r *http.Request) {
 func (handler *PostHandler) QueryPosts(w http.ResponseWriter, r *http.Request) {
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
 	if tx == nil || transactionCtx == nil {
-		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, nil)
+		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError,
+			transactionErr)
 		return
 	}
 	var err error
@@ -290,7 +294,8 @@ func (handler *PostHandler) HandleGetFeedRequest(w http.ResponseWriter, r *http.
 	// Begin a new transaction
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
 	if tx == nil || transactionCtx == nil {
-		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, nil)
+		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError,
+			transactionErr)
 		return
 	}
 	var err error
