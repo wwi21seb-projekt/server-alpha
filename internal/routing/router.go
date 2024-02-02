@@ -1,3 +1,4 @@
+// package routing sets up the HTTP routing for the server.
 package routing
 
 import (
@@ -28,6 +29,8 @@ var imprint = "Impressum\n\nEinen Löwen interessiert es nicht, was Schafe über
 	"Spam-Mails, vor.\n\nDiese Webseite wurde im Rahmen eines Universitätsprojekts erstellt und dient " +
 	"ausschließlich zu nicht-kommerziellen Zwecken."
 
+// InitRouter initializes and returns a new Chi router.
+// It sets up the routing rules, middleware, and handlers for different routes.
 func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtMgr managers.JWTMgr) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -125,6 +128,7 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 	return r
 }
 
+// userRouter sets up the routing rules for user-related endpoints.
 func userRouter(databaseMgr *managers.DatabaseMgr, jwtMgr managers.JWTMgr, mailMgr *managers.MailMgr) func(chi.Router) {
 	return func(r chi.Router) {
 		userHdl := handlers.NewUserHandler(databaseMgr, &jwtMgr, mailMgr)

@@ -18,19 +18,20 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// JWTMgr defines the interface for managing JWT tokens including token generation, validation, and handling middleware.
 type JWTMgr interface {
 	GenerateJWT(userId, username string, isRefreshToken bool) (string, error)
 	ValidateJWT(tokenString string) (jwt.Claims, error)
 	JWTMiddleware(next http.Handler) http.Handler
 }
 
-// JWTManager handles JWT generation, signing, and validation.
+// JWTManager handles the creation, signing, and validation of JWT tokens using a pair of EdDSA keys.
 type JWTManager struct {
 	privateKey ed25519.PrivateKey
 	publicKey  ed25519.PublicKey
 }
 
-// NewJWTManager creates a new JWTManager with the initial key pair.
+// NewJWTManager initializes a new JWTManager with a provided pair of EdDSA keys.
 func NewJWTManager(privateKey ed25519.PrivateKey, publicKey ed25519.PublicKey) JWTMgr {
 	log.Info("Initializing JWT manager using provided key pair...")
 
@@ -44,7 +45,7 @@ func NewJWTManager(privateKey ed25519.PrivateKey, publicKey ed25519.PublicKey) J
 	return &JWTManager
 }
 
-// GenerateJWT generates a new JWT with the given claims.
+// GenerateJWT creates a new JWT with the given user details and signing with the private key.
 func (jm *JWTManager) GenerateJWT(userId, username string, isRefreshToken bool) (string, error) {
 	claims := generateClaims(userId, username, isRefreshToken)
 
@@ -52,7 +53,7 @@ func (jm *JWTManager) GenerateJWT(userId, username string, isRefreshToken bool) 
 	return token.SignedString(jm.privateKey)
 }
 
-// ValidateJWT validates the given JWT and returns the claims if valid.
+// ValidateJWT parses the token string, verifies it using the public key and returns the claims if the token is valid.
 func (jm *JWTManager) ValidateJWT(tokenString string) (jwt.Claims, error) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		// Verify the signing method
@@ -74,7 +75,7 @@ func (jm *JWTManager) ValidateJWT(tokenString string) (jwt.Claims, error) {
 	return token.Claims, nil
 }
 
-// JWTMiddleware is a middleware that validates the JWT token in the request header.
+// JWTMiddleware provides an HTTP middleware that validates JWTs from the 'Authorization' header of incoming requests.
 func (jm *JWTManager) JWTMiddleware(next http.Handler) http.Handler {
 	fn := func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -106,6 +107,8 @@ func (jm *JWTManager) JWTMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(fn)
 }
 
+// NewJWTManagerFromFile creates a new JWTManager by loading EdDSA keys from specified files.
+// If the keys don't exist, it generates and saves a new pair of keys.
 func NewJWTManagerFromFile() (JWTMgr, error) {
 	log.Info("Initializing JWT manager using key pair from file...")
 
@@ -156,6 +159,7 @@ func NewJWTManagerFromFile() (JWTMgr, error) {
 	}, nil
 }
 
+// LoadKeys reads the private and public key from specified files.
 func loadKeys(privateKeyPath, publicKeyPath string) ([]byte, []byte, error) {
 	log.Info("Loading key pair from file...")
 	// Read the private key from file
@@ -176,6 +180,7 @@ func loadKeys(privateKeyPath, publicKeyPath string) ([]byte, []byte, error) {
 	return privateKeyBytes, publicKeyBytes, nil
 }
 
+// DecodeKeys decodes the keys from PEM format to EdDSA keys.
 func decodeKeys(privateKeyPem, publicKeyPem []byte) (ed25519.PrivateKey, ed25519.PublicKey, error) {
 	log.Info("Decoding key pair from PEM format...")
 	// Decode the private key from PEM format
@@ -208,6 +213,7 @@ func decodeKeys(privateKeyPem, publicKeyPem []byte) (ed25519.PrivateKey, ed25519
 	return privateKeyAny.(ed25519.PrivateKey), publicKeyAny.(ed25519.PublicKey), nil
 }
 
+// GenerateAndStoreKeys generates a new pair of EdDSA keys and stores them in specified files.
 func generateAndStoreKeys(privateKeyPath, publicKeyPath string) error {
 	log.Info("Generating new key pair...")
 
@@ -281,7 +287,7 @@ func generateAndStoreKeys(privateKeyPath, publicKeyPath string) error {
 	return nil
 }
 
-// GenerateClaims generates the standard JWT claims.
+// GenerateClaims creates the JWT claims including user-specific details and token type (access or refresh).
 func generateClaims(userId, username string, isRefreshToken bool) jwt.Claims {
 	var exp int64
 	var refresh string

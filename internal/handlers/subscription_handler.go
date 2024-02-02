@@ -17,24 +17,28 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// SubscriptionHdl defines the interface for handling subscription-related HTTP requests.
 type SubscriptionHdl interface {
 	HandleGetSubscriptions(w http.ResponseWriter, r *http.Request)
 	Subscribe(w http.ResponseWriter, r *http.Request)
 	Unsubscribe(w http.ResponseWriter, r *http.Request)
 }
 
+// SubscriptionHandler provides methods to handle subscription-related HTTP requests.
 type SubscriptionHandler struct {
 	DatabaseManager managers.DatabaseMgr
 	JwtManager      managers.JWTMgr
 }
 
+// NewSubscriptionHandler returns a new SubscriptionHandler with the provided database manager.
 func NewSubscriptionHandler(databaseManager *managers.DatabaseMgr) SubscriptionHdl {
 	return &SubscriptionHandler{
 		DatabaseManager: *databaseManager,
 	}
 }
 
-// HandleGetSubscriptions retrieves the subscriptions of a user and sends a paginated response.
+// HandleGetSubscriptions handles retrieving subscriptions of a user and sending a paginated response.
+// It extracts the username from the URL, fetches subscriptions based on the subscription type, and sends the response.
 func (handler *SubscriptionHandler) HandleGetSubscriptions(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithDeadline(r.Context(), time.Now().Add(10*time.Second))
 	defer func() {
@@ -135,7 +139,9 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(w http.ResponseWriter
 	utils.SendPaginatedResponse(ctx, w, results, offset, limit, totalSubscriptions)
 }
 
-// Subscribe creates a new subscription between the current user and the username specified in the request body.
+// Subscribe handles creating a new subscription between the current user and the specified user in the request.
+// It validates the request, checks if the subscription already exists, creates a new subscription if it doesn't exist,
+// and sends the subscription details in the response.
 func (handler *SubscriptionHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
 	// Begin a new transaction
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
@@ -228,7 +234,8 @@ func (handler *SubscriptionHandler) Subscribe(w http.ResponseWriter, r *http.Req
 	utils.WriteAndLogResponse(transactionCtx, w, subscriptionDto, http.StatusCreated)
 }
 
-// Unsubscribe removes a subscription between the current user and the user specified by the subscription ID.
+// Unsubscribe handles removing a subscription between the current user and the user specified by the subscription ID in the URL.
+// It validates the user's authorization to delete the subscription and removes the subscription if authorized.
 func (handler *SubscriptionHandler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 	// Begin a new transaction
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
