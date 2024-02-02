@@ -1,3 +1,5 @@
+// Package managers handles the sending of emails for account activation and confirmation using the Mailgun service
+// and the Hermes package for email formatting.
 package managers
 
 import (
@@ -10,11 +12,15 @@ import (
 	"time"
 )
 
+// MailMgr is an interface that outlines the contract for email management.
+// It includes methods for sending activation and confirmation emails.
 type MailMgr interface {
 	SendActivationMail(email, username, token, serviceName string) error
 	SendConfirmationMail(email, username, serviceName string) error
 }
 
+// MailManager is a concrete implementation of the MailMgr interface.
+// It uses the Mailgun service for sending emails and the Hermes package for formatting emails.
 type MailManager struct {
 	Hermes  *hermes.Hermes
 	Mailgun *mailgun.MailgunImpl
@@ -23,6 +29,8 @@ type MailManager struct {
 var from = "Server Alpha <team@mail.server-alpha.tech>"
 var environment string
 
+// SendActivationMail sends an activation email to a user with a token to activate their account.
+// The email content is formatted using the Hermes package and sent using the Mailgun service.
 func (mm *MailManager) SendActivationMail(email, username, token, serviceName string) error {
 	if environment != "production" {
 		log.Info("Skipping confirmation mail in development mode")
@@ -73,6 +81,8 @@ func (mm *MailManager) SendActivationMail(email, username, token, serviceName st
 	return nil
 }
 
+// SendConfirmationMail sends a confirmation email to a user to confirm that their account has been activated.
+// The email content is formatted using the Hermes package and sent using the Mailgun service.
 func (mm *MailManager) SendConfirmationMail(email, username, serviceName string) error {
 	if environment != "production" {
 		log.Info("Skipping confirmation mail in development mode")
@@ -118,6 +128,9 @@ func (mm *MailManager) SendConfirmationMail(email, username, serviceName string)
 	return nil
 }
 
+// NewMailManager initializes a new MailManager instance with configured Mailgun and Hermes settings.
+// It also checks the runtime environment to determine if emails should be sent.
+// This function is used during the initialization phase of the application.
 func NewMailManager() MailMgr {
 	log.Info("Initializing mail manager")
 	// Check if running in production

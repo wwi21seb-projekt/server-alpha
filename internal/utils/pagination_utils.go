@@ -1,3 +1,4 @@
+// package utils provides utility functions to support various operations within the application.
 package utils
 
 import (
@@ -10,6 +11,8 @@ import (
 	"strconv"
 )
 
+// ParsePaginationParams extracts the 'offset' and 'limit' parameters from the request's query parameters.
+// It provides default values and ensures that the returned values are non-negative.
 func ParsePaginationParams(r *http.Request) (int, int, error) {
 	offsetString := r.URL.Query().Get(OffsetParamKey)
 	if offsetString == "" {
@@ -40,6 +43,8 @@ func ParsePaginationParams(r *http.Request) (int, int, error) {
 	return offset, limit, nil
 }
 
+// SendPaginatedResponse sends a paginated HTTP response with the subset of records determined by the offset and limit.
+// It handles the slicing of records and constructs a response structure that includes pagination details.
 func SendPaginatedResponse(ctx context.Context, w http.ResponseWriter, records interface{}, offset, limit, totalRecords int) {
 	// Get a reflect.Value of records.
 
