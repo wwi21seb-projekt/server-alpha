@@ -1,3 +1,4 @@
+// Package schemas defines the request structures for various operations in the application.
 package schemas
 
 // RegistrationRequest is a struct that represents a registration request

@@ -1,4 +1,4 @@
-// package routing sets up the HTTP routing for the server.
+// Package routing sets up the HTTP routing for the server.
 package routing
 
 import (
@@ -29,8 +29,9 @@ var imprint = "Impressum\n\nEinen Löwen interessiert es nicht, was Schafe über
 	"Spam-Mails, vor.\n\nDiese Webseite wurde im Rahmen eines Universitätsprojekts erstellt und dient " +
 	"ausschließlich zu nicht-kommerziellen Zwecken."
 
-// InitRouter initializes and returns a new Chi router.
-// It sets up the routing rules, middleware, and handlers for different routes.
+// InitRouter sets up the routing rules, middleware, and handlers for different routes.
+// It also configures CORS, injects trace IDs into requests, sets up logging, error recovery,
+// and request timeouts, and initializes various route handlers.
 func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtMgr managers.JWTMgr) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -128,7 +129,9 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 	return r
 }
 
-// userRouter sets up the routing rules for user-related endpoints.
+// userRouter sets up the routing rules specifically for user-related endpoints.
+// It initializes user handlers and sets up routes for registering, logging in,
+// changing user information, refreshing tokens, and managing user activation.
 func userRouter(databaseMgr *managers.DatabaseMgr, jwtMgr managers.JWTMgr, mailMgr *managers.MailMgr) func(chi.Router) {
 	return func(r chi.Router) {
 		userHdl := handlers.NewUserHandler(databaseMgr, &jwtMgr, mailMgr)
@@ -146,6 +149,8 @@ func userRouter(databaseMgr *managers.DatabaseMgr, jwtMgr managers.JWTMgr, mailM
 	}
 }
 
+// traceIdMiddleware is a middleware function that generates a new trace ID for each request.
+// It injects this trace ID into the request context and sets it as a header for downstream use.
 func traceIdMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		traceId := utils.GenerateTraceId()
@@ -157,6 +162,8 @@ func traceIdMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// logRequestEntryMiddleware is a middleware function that logs the details of incoming requests.
+// It logs the method, URL, and trace ID of each request for debugging and tracking purposes.
 func logRequestEntryMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		utils.LogRequest(r.Context(), r)
