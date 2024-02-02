@@ -4,16 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/go-chi/chi/v5"
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	log "github.com/sirupsen/logrus"
 	"net/http"
 	"server-alpha/internal/managers"
 	"server-alpha/internal/schemas"
 	"server-alpha/internal/utils"
 	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	log "github.com/sirupsen/logrus"
 )
 
 type SubscriptionHdl interface {
@@ -46,15 +47,11 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(w http.ResponseWriter
 
 	// Get the username from the path variable
 	username := chi.URLParam(r, utils.UsernameKey)
-	if username == "" {
-		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("username missing"))
-		return
-	}
 
 	// Get pagination parameters
 	offset, limit, err := utils.ParsePaginationParams(r)
 	if err != nil {
-		utils.WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, err)
+		utils.WriteAndLogError(ctx, w, schemas.BadRequest, http.StatusBadRequest, err)
 		return
 	}
 
@@ -67,6 +64,17 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(w http.ResponseWriter
 	// If the subscription type is following, fetch the users the user is following
 	if subscriptionType == "following" {
 		userTypes = []string{"subscribee", "subscriber"}
+	}
+
+	findUserQuery := "SELECT user_id FROM alpha_schema.users WHERE username = $1"
+	rows, err := handler.DatabaseManager.GetPool().Query(ctx, findUserQuery, username)
+	if err != nil {
+		utils.WriteAndLogError(ctx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+	if !rows.Next() {
+		utils.WriteAndLogError(ctx, w, schemas.UserNotFound, http.StatusNotFound, errors.New("user not found"))
+		return
 	}
 
 	subscriptionQuery := fmt.Sprintf(`
@@ -87,9 +95,9 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(w http.ResponseWriter
 	claims := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
 	jwtUserId := claims["sub"].(string)
 
-	rows, err := handler.DatabaseManager.GetPool().Query(ctx, subscriptionQuery, jwtUserId, username)
+	rows, err = handler.DatabaseManager.GetPool().Query(ctx, subscriptionQuery, jwtUserId, username)
 	if err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -100,7 +108,7 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(w http.ResponseWriter
 		followerId, followingId := uuid.UUID{}, uuid.UUID{}
 
 		if err := rows.Scan(&followingId, &followerId, &subscription.Username, &subscription.Nickname, &subscription.ProfilePictureUrl); err != nil {
-			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+			utils.WriteAndLogError(ctx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
 			return
 		}
 
@@ -119,12 +127,12 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(w http.ResponseWriter
 	row := handler.DatabaseManager.GetPool().QueryRow(ctx, countQuery, username)
 	var totalSubscriptions int
 	if err := row.Scan(&totalSubscriptions); err != nil {
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
 	// Send response
-	utils.SendPaginatedResponse(w, results, offset, limit, totalSubscriptions)
+	utils.SendPaginatedResponse(ctx, w, results, offset, limit, totalSubscriptions)
 }
 
 // Subscribe creates a new subscription between the current user and the username specified in the request body.
@@ -139,12 +147,12 @@ func (handler *SubscriptionHandler) Subscribe(w http.ResponseWriter, r *http.Req
 
 	// Decode the request body into the subscription request struct
 	subscriptionRequest := &schemas.SubscriptionRequest{}
-	if err := utils.DecodeRequestBody(w, r, subscriptionRequest); err != nil {
+	if err := utils.DecodeRequestBody(transactionCtx, w, r, subscriptionRequest); err != nil {
 		return
 	}
 
 	// Validate the subscription request struct using the validator
-	if err := utils.ValidateStruct(w, subscriptionRequest); err != nil {
+	if err := utils.ValidateStruct(transactionCtx, w, subscriptionRequest); err != nil {
 		return
 	}
 
@@ -154,11 +162,11 @@ func (handler *SubscriptionHandler) Subscribe(w http.ResponseWriter, r *http.Req
 	var subscribeeId string
 	if err := row.Scan(&subscribeeId); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			utils.WriteAndLogError(w, schemas.UserNotFound, http.StatusNotFound, err)
+			utils.WriteAndLogError(transactionCtx, w, schemas.UserNotFound, http.StatusNotFound, err)
 			return
 		}
 
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -169,7 +177,8 @@ func (handler *SubscriptionHandler) Subscribe(w http.ResponseWriter, r *http.Req
 
 	// Check and throw error if the user wants to subscribe to himself
 	if jwtUserId == subscribeeId {
-		utils.WriteAndLogError(w, schemas.SubscriptionSelfFollow, http.StatusNotAcceptable, errors.New("user cannot subscribe to himself"))
+		utils.WriteAndLogError(transactionCtx, w, schemas.SubscriptionSelfFollow, http.StatusNotAcceptable,
+			errors.New("user cannot subscribe to himself"))
 		return
 	}
 
@@ -180,14 +189,15 @@ func (handler *SubscriptionHandler) Subscribe(w http.ResponseWriter, r *http.Req
 
 	if err := rows.Scan(&subscriptionId); err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
-			utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+			utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
 			return
 		}
 	}
 
 	if subscriptionId != uuid.Nil {
 		// User is already subscribed, since the subscriptionId is not nil
-		utils.WriteAndLogError(w, schemas.SubscriptionAlreadyExists, http.StatusConflict, errors.New("subscription already exists"))
+		utils.WriteAndLogError(transactionCtx, w, schemas.SubscriptionAlreadyExists, http.StatusConflict,
+			errors.New("subscription already exists"))
 		return
 	}
 
@@ -197,7 +207,7 @@ func (handler *SubscriptionHandler) Subscribe(w http.ResponseWriter, r *http.Req
 	createdAt := time.Now()
 	if _, err := tx.Exec(transactionCtx, queryString, subscriptionId, jwtUserId, subscribeeId, createdAt); err != nil {
 		log.Errorf("error while inserting subscription: %v", err)
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -215,7 +225,7 @@ func (handler *SubscriptionHandler) Subscribe(w http.ResponseWriter, r *http.Req
 	}
 
 	// Send success response
-	utils.WriteAndLogResponse(w, subscriptionDto, http.StatusCreated)
+	utils.WriteAndLogResponse(transactionCtx, w, subscriptionDto, http.StatusCreated)
 }
 
 // Unsubscribe removes a subscription between the current user and the user specified by the subscription ID.
@@ -241,16 +251,18 @@ func (handler *SubscriptionHandler) Unsubscribe(w http.ResponseWriter, r *http.R
 	var subscriberId, subscribeeId string
 	if err := row.Scan(&subscriberId, &subscribeeId); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			utils.WriteAndLogError(w, schemas.SubscriptionNotFound, http.StatusNotFound, errors.New("subscription not found"))
+			utils.WriteAndLogError(transactionCtx, w, schemas.SubscriptionNotFound, http.StatusNotFound,
+				errors.New("subscription not found"))
 			return
 		}
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
 	// Check and throw error if user wants to delete someone else's subscription
 	if subscriberId != jwtUserId {
-		utils.WriteAndLogError(w, schemas.UnsubscribeForbidden, http.StatusForbidden, errors.New("you can only delete your own subscriptions"))
+		utils.WriteAndLogError(transactionCtx, w, schemas.UnsubscribeForbidden, http.StatusForbidden,
+			errors.New("you can only delete your own subscriptions"))
 		return
 	}
 
@@ -258,10 +270,11 @@ func (handler *SubscriptionHandler) Unsubscribe(w http.ResponseWriter, r *http.R
 	queryString = "DELETE FROM alpha_schema.subscriptions WHERE subscription_id = $1"
 	if _, err := tx.Exec(transactionCtx, queryString, subscriptionId); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			utils.WriteAndLogError(w, schemas.SubscriptionNotFound, http.StatusNotFound, errors.New("subscription not found"))
+			utils.WriteAndLogError(transactionCtx, w, schemas.SubscriptionNotFound, http.StatusNotFound,
+				errors.New("subscription not found"))
 			return
 		}
-		utils.WriteAndLogError(w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 

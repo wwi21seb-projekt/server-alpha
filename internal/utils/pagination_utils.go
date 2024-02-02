@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -39,7 +40,7 @@ func ParsePaginationParams(r *http.Request) (int, int, error) {
 	return offset, limit, nil
 }
 
-func SendPaginatedResponse(w http.ResponseWriter, records interface{}, offset, limit, totalRecords int) {
+func SendPaginatedResponse(ctx context.Context, w http.ResponseWriter, records interface{}, offset, limit, totalRecords int) {
 	// Get a reflect.Value of records.
 
 	v := reflect.ValueOf(records)
@@ -54,7 +55,7 @@ func SendPaginatedResponse(w http.ResponseWriter, records interface{}, offset, l
 
 	// Check if v is not a slice.
 	if v.Kind() != reflect.Slice {
-		WriteAndLogError(w, schemas.BadRequest, http.StatusBadRequest, errors.New("records not a valid list"))
+		WriteAndLogError(ctx, w, schemas.BadRequest, http.StatusBadRequest, errors.New("records not a valid list"))
 		return
 	}
 
@@ -84,7 +85,7 @@ func SendPaginatedResponse(w http.ResponseWriter, records interface{}, offset, l
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(paginatedResponse); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		WriteAndLogError(w, schemas.InternalServerError, http.StatusInternalServerError, err)
+		WriteAndLogError(ctx, w, schemas.InternalServerError, http.StatusInternalServerError, err)
 		return
 	}
 }

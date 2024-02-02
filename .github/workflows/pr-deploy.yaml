@@ -1,4 +1,5 @@
 name: PR Deployment
+run-name: Deploy PR-${{ github.event.pull_request.number }} to Testing Subdomain
 
 on:
   pull_request:
@@ -6,152 +7,66 @@ on:
     branches:
       - main
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+permissions:
+  contents: read
+  packages: write
+  pull-requests: write
 
 jobs:
-  preview-deploy:
-    runs-on: ubuntu-latest
+  start-comment:
+    uses: ./.github/workflows/comment-pr.yaml
     if: github.actor != 'renovate[bot]' # Don't run this workflow for renovate bot
+    with:
+      message: |
+        :rocket: Your changes are being deployed to a preview domain.
 
-    permissions:
-      contents: read
-      packages: write
-      pull-requests: write
+  preview-build-push-docker:
+    needs: start-comment
+    uses: ./.github/workflows/build-push-image.yaml
+    with:
+      preview: true
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+  preview-deploy:
+    needs: preview-build-push-docker
+    uses: ./.github/workflows/deploy.yaml
+    with:
+      preview: true
+      pr-number: ${{ github.event.pull_request.number }}
+      docker-image: ${{ needs.preview-build-push-docker.outputs.docker-tag }}
+      compose-name: pr_${{ github.event.pull_request.number }}
+      ssh-script: |
+        cd ./preview/pr-${{ github.event.pull_request.number }}
+        cp ~/.env .env
+        mkdir -p ./deployments/keys
 
-      - name: Comment PR
-        id: comment
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{secrets.GITHUB_TOKEN}}
-          script: |
-            const issue_number = context.issue.number;
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-            const message = `
-              :construction: Your changes are being deployed to a preview domain...
-            `;
+        set_key_value "PR_NUMBER" "${{ github.event.pull_request.number }}" ".env"
+        set_key_value "SERVER_IMAGE" "ghcr.io/wwi21seb-projekt/server-alpha:pr-${{ github.event.pull_request.number }}" ".env"   
+        set_key_value "TRAFFIC_RULE" "Host(\`pr-${{ github.event.pull_request.number }}.preview.server-alpha.tech\`)" ".env"
+        set_key_value "MONITORING_TRAFFIC_RULE" "Host(\`monitoring.pr-${{ github.event.pull_request.number }}.preview.server-alpha.tech\`)" ".env"   
 
-            // Fetch all comments
-            const comments = await github.rest.issues.listComments({
-              owner: owner,
-              repo: repo,
-              issue_number: issue_number
-            });
+        jq --arg pr_number "${{ github.event.pull_request.number }}" '
+          .panels[] |=
+          if .title == "Server-Alpha Logs" then .targets[0].expr = "{container_name=\"pr_" + $pr_number + "_app_1\"}"
+          elif .title == "Database Logs" then .targets[0].expr = "{container_name=\"pr_" + $pr_number + "_db_1\"}"
+          else . end
+        ' deployments/provisioning/dashboards/logs.json > tmp.json && mv tmp.json deployments/provisioning/dashboards/logs.json
+    secrets: inherit
 
-            // Find a specific comment
-            const botComment = comments.data.find(comment => comment.user.login === 'github-actions[bot]');
+  success-comment:
+    needs: [start-comment, preview-build-push-docker, preview-deploy]
+    uses: ./.github/workflows/comment-pr.yaml
+    if: ${{ needs.start-comment.result == 'success' && needs.preview-build-push-docker.result == 'success' && needs.preview-deploy.result == 'success'}}
+    with:
+      message: |
+        :white_check_mark: Your changes have been deployed to a preview domain.
+        You can access the preview at https://pr-${{ github.event.pull_request.number }}.preview.server-alpha.tech
+        :warning: Please note that the preview will be deleted once the pull request is closed.
 
-            let comment_id;
-
-            // If it exists, update it
-            if (botComment) {
-              comment_id = botComment.id;
-              await github.rest.issues.updateComment({
-                owner: owner,
-                repo: repo,
-                comment_id: comment_id,
-                body: message
-              });
-            } 
-            // Else, create a new one
-            else {
-              const comment = await github.rest.issues.createComment({
-                owner: owner,
-                repo: repo,
-                issue_number: issue_number,
-                body: message
-              });
-              comment_id = comment.data.id;
-            }
-
-            core.setOutput('comment_id', comment_id);
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Get Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: | 
-            type=ref,enable=true,priority=600,prefix=pr-,suffix=,event=pr
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          file: ./build/package/Dockerfile
-
-      - name: Copy docker-compose prod file to server
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_PORT }}
-          source: "deployments/docker-compose.prod.yml,deployments/server_alpha_db.sql,deployments/provisioning/*,configs/*.yaml"
-          target: "/home/serveralpha/preview/pr-${{ github.event.pull_request.number }}"
-
-      - name: Deploy PR to Testing Subdomain
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_PORT }}
-          script: |
-            cd ./preview/pr-${{ github.event.pull_request.number }}
-            cp ~/.env .env
-            mkdir -p ./deployments/keys
-            
-            echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> .env
-            echo "SERVER_IMAGE=ghcr.io/wwi21seb-projekt/server-alpha:pr-${{ github.event.pull_request.number }}" >> .env
-            echo "TRAFFIC_RULE=Host(\`pr-${{ github.event.pull_request.number }}.preview.server-alpha.tech\`)" >> .env        
-            echo "MONITORING_TRAFFIC_RULE=Host(\`monitoring.pr-${{ github.event.pull_request.number }}.preview.server-alpha.tech\`)" >> .env        
-            
-            jq --arg pr_number "${{ github.event.pull_request.number }}" '
-              .panels[] |=
-              if .title == "Server-Alpha Logs" then .targets[0].expr = "{container_name=\"pr_" + $pr_number + "_app_1\"}"
-              elif .title == "Database Logs" then .targets[0].expr = "{container_name=\"pr_" + $pr_number + "_db_1\"}"
-              else . end
-            ' deployments/provisioning/dashboards/logs.json > tmp.json && mv tmp.json deployments/provisioning/dashboards/logs.json
-            
-            docker pull ${{ steps.meta.outputs.tags }}
-            docker-compose -f deployments/docker-compose.prod.yml -p pr_${{ github.event.pull_request.number }} down || true
-            docker-compose -f deployments/docker-compose.prod.yml -p pr_${{ github.event.pull_request.number }} up -d
-
-      - name: Update Comment
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{secrets.GITHUB_TOKEN}}
-          script: |
-            const issue_number = context.issue.number;
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-            const comment_id = "${{ steps.comment.outputs.comment_id }}";
-            const url = `https://pr-${issue_number}.preview.server-alpha.tech`;
-            const message = `
-              :tada: Your changes are live! :rocket:
-              You can view them under this url: ${url}
-              Happy reviewing! :eyeglasses:
-            `;
-            github.rest.issues.updateComment({
-              owner: owner,
-              repo: repo,
-              comment_id: comment_id,
-              body: message
-            });
+  failure-comment:
+    needs: [start-comment, preview-build-push-docker, preview-deploy]
+    uses: ./.github/workflows/comment-pr.yaml
+    if: ${{ needs.start-comment.result == 'failure' || needs.preview-build-push-docker.result == 'failure' || needs.preview-deploy.result == 'failure' }}
+    with:
+      message: |
+        :x: Your changes could not be deployed to a preview domain.
+        Please check the logs for more information.

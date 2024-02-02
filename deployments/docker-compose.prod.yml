@@ -52,11 +52,6 @@ services:
       - "traefik.http.routers.alpha-${PR_NUMBER:-main}.tls.certresolver=default"
       - "traefik.http.routers.alpha-${PR_NUMBER:-main}.middlewares=secHeaders@file"
       - "traefik.http.services.alpha-${PR_NUMBER:-main}.loadbalancer.server.port=8080"
-    healthcheck:
-      test: "wget --no-verbose --tries=1 --spider http://app:8080/health || exit 1"
-      interval: 10s
-      timeout: 5s
-      retries: 5
     logging:
       driver: "json-file"
       options:
