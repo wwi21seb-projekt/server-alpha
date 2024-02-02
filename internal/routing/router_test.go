@@ -416,7 +416,6 @@ func TestGetSubscriptions(t *testing.T) {
 			// Get mock pool
 			poolMock := databaseMgrMock.GetPool().(pgxmock.PgxPoolIface)
 
-			poolMock.ExpectBegin()
 			// Mock database calls
 			for _, mock := range tc.dbCalls {
 				if mock.Query != "" {
