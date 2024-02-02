@@ -18,13 +18,6 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/crypto/bcrypt"
-
-	"github.com/gavv/httpexpect/v2"
-	"github.com/google/uuid"
-	"github.com/pashagolub/pgxmock/v3"
-	log "github.com/sirupsen/logrus"
-	"github.com/stretchr/testify/mock"
-	"golang.org/x/crypto/bcrypt"
 )
 
 // define request payload for user registration
