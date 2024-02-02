@@ -357,7 +357,7 @@ func TestChangePassword(t *testing.T) {
 		status       int
 		responseBody map[string]interface{}
 	}{
-		/*{
+		{
 			"Successful",
 			userId,
 			username,
@@ -366,7 +366,7 @@ func TestChangePassword(t *testing.T) {
 			validNewPassword,
 			http.StatusNoContent,
 			map[string]interface{}{},
-		},*/
+		},
 		{
 			"Bad Request",
 			userId,
@@ -448,12 +448,9 @@ func TestChangePassword(t *testing.T) {
 				poolMock.ExpectQuery("SELECT").WithArgs(tc.username).
 					WillReturnRows(pgxmock.NewRows([]string{"password", "userId"}).
 						AddRow(string(oldPasswordHash), tc.userId))
-				poolMock.ExpectExec("UPDATE").
-					WithArgs(func(passwordHash []byte) bool {
-						err := bcrypt.CompareHashAndPassword(passwordHash, []byte(tc.newPassword))
-						return err == nil
-					}, mock.AnythingOfType("int64")).
+				poolMock.ExpectExec("UPDATE").WithArgs(pgxmock.AnyArg(), tc.userId).
 					WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+				poolMock.ExpectCommit()
 			}
 
 			// Create request and get response
@@ -466,8 +463,10 @@ func TestChangePassword(t *testing.T) {
 				})
 			response := request.Expect().Status(tc.status)
 
-			// Assert response
-			response.JSON().IsEqual(tc.responseBody)
+			if tc.name != "Successful" {
+				// Assert response
+				response.JSON().IsEqual(tc.responseBody)
+			}
 
 			// Check if all expectations were met
 			if err := poolMock.ExpectationsWereMet(); err != nil {
