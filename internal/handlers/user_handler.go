@@ -594,7 +594,8 @@ func retrieveUserIdAndEmail(transactionCtx context.Context, w http.ResponseWrite
 			return "", uuid.UUID{}, true
 		}
 	} else {
-		utils.WriteAndLogError(transactionCtx, w, schemas.UserNotFound, http.StatusNotFound, errors.New("user not found"))
+		utils.WriteAndLogError(transactionCtx, w, schemas.UserNotFound, http.StatusNotFound,
+			errors.New("user not found"))
 		return "", uuid.UUID{}, true
 	}
 
@@ -657,7 +658,8 @@ func checkTokenValidity(ctx context.Context, w http.ResponseWriter, tx pgx.Tx, t
 	}
 
 	if time.Now().After(expiresAt.Time) {
-		utils.WriteAndLogError(ctx, w, schemas.ActivationTokenExpired, http.StatusUnauthorized, errors.New("token expired"))
+		utils.WriteAndLogError(ctx, w, schemas.ActivationTokenExpired, http.StatusUnauthorized,
+			errors.New("token expired"))
 		return errors.New("token expired")
 	}
 
