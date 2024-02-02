@@ -10,14 +10,18 @@ import (
 	"unicode/utf8"
 )
 
+// Validator encapsulates validation logic for various types of data.
+// It uses the validator package for general validation and truemail for email verification.
 type Validator struct {
 	Validate    *validator.Validate
 	VerifyEmail func(email string) bool
 }
 
-var instance *Validator
-var configuration *truemail.Configuration
+var instance *Validator                   // instance holds a singleton instance of Validator.
+var configuration *truemail.Configuration // configuration holds the configuration for truemail.
 
+// GetValidator returns a singleton instance of Validator.
+// It initializes the instance with custom validators and email verification configuration on the first call.
 func GetValidator() *Validator {
 	once := sync.Once{}
 	once.Do(func() {
@@ -38,10 +42,12 @@ func GetValidator() *Validator {
 	return instance
 }
 
+// ValidateEmail uses truemail to verify the format and domain of an email address.
 func validateEmail(email string) bool {
 	return truemail.IsValid(email, configuration)
 }
 
+// RegisterCustomValidators registers custom validators for username, password, post, and location fields.
 func registerCustomValidators(v *validator.Validate) {
 	_ = v.RegisterValidation("username_validation", usernameValidation)
 	_ = v.RegisterValidation("password_validation", passwordValidation)
@@ -49,6 +55,8 @@ func registerCustomValidators(v *validator.Validate) {
 	_ = v.RegisterValidation("location_validation", locationValidation)
 }
 
+// usernameValidation defines the validation logic for a username.
+// It ensures that the username matches a specific pattern.
 func usernameValidation(fl validator.FieldLevel) bool {
 	username := fl.Field().String()
 	// Define the regular expression pattern for a valid username
@@ -62,6 +70,8 @@ func usernameValidation(fl validator.FieldLevel) bool {
 	return match
 }
 
+// passwordValidation defines the validation logic for a password.
+// It ensures that the password contains uppercase, lowercase, numeric, and special characters.
 func passwordValidation(fl validator.FieldLevel) bool {
 	var upperLetter, lowerLetter, number, specialChar bool
 
@@ -86,11 +96,15 @@ func passwordValidation(fl validator.FieldLevel) bool {
 	return upperLetter && lowerLetter && number && specialChar
 }
 
+// postValidation defines the validation logic for a post.
+// It ensures that the post content is a valid UTF-8 encoded string.
 func postValidation(fl validator.FieldLevel) bool {
 	value := fl.Field().String()
 	return utf8.ValidString(value)
 }
 
+// locationValidation defines the validation logic for a location.
+// It ensures that the longitude, latitude, and accuracy fields contain valid values.
 func locationValidation(fl validator.FieldLevel) bool {
 	// Get the location struct from the field
 	location := fl.Field().Interface().(schemas.LocationDTO)

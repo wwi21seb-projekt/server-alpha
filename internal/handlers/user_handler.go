@@ -22,6 +22,7 @@ import (
 	"server-alpha/internal/utils"
 )
 
+// UserHdl defines the interface for handling user-related HTTP requests.
 type UserHdl interface {
 	RegisterUser(w http.ResponseWriter, r *http.Request)
 	ActivateUser(w http.ResponseWriter, r *http.Request)
@@ -35,6 +36,7 @@ type UserHdl interface {
 	RetrieveUserPosts(w http.ResponseWriter, r *http.Request)
 }
 
+// UserHandler provides methods to handle user-related HTTP requests.
 type UserHandler struct {
 	DatabaseManager managers.DatabaseMgr
 	JWTManager      managers.JWTMgr
@@ -42,6 +44,7 @@ type UserHandler struct {
 	Validator       *utils.Validator
 }
 
+// NewUserHandler returns a new UserHandler with the provided managers and validator.
 func NewUserHandler(databaseManager *managers.DatabaseMgr, jwtManager *managers.JWTMgr, mailManager *managers.MailMgr) UserHdl {
 	return &UserHandler{
 		DatabaseManager: *databaseManager,
@@ -53,7 +56,8 @@ func NewUserHandler(databaseManager *managers.DatabaseMgr, jwtManager *managers.
 
 var errInvalidToken = errors.New("invalid token")
 
-// RegisterUser registers a new user and sends an activation token to the user's email.
+// RegisterUser handles the registration of a new user by validating the request, checking for username or email availability,
+// hashing the password, inserting the user into the database, generating and sending an activation token, and committing the transaction.
 func (handler *UserHandler) RegisterUser(w http.ResponseWriter, r *http.Request) {
 	// Begin a new transaction
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
@@ -124,7 +128,9 @@ func (handler *UserHandler) RegisterUser(w http.ResponseWriter, r *http.Request)
 	utils.WriteAndLogResponse(w, userDto, http.StatusCreated)
 }
 
-// ActivateUser activates the user specified in the path.
+// ActivateUser handles user activation by validating the request, checking user existence and activation status,
+// validating the activation token, updating the user's activation status in the database, deleting the token,
+// generating a new token pair, and committing the transaction.
 func (handler *UserHandler) ActivateUser(w http.ResponseWriter, r *http.Request) {
 	// Begin a new transaction
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
@@ -195,7 +201,8 @@ func (handler *UserHandler) ActivateUser(w http.ResponseWriter, r *http.Request)
 	utils.WriteAndLogResponse(w, tokenDto, http.StatusOK)
 }
 
-// ResendToken resends the activation token to the user specified in the path.
+// ResendToken handles resending the activation token by validating the request, checking user existence and activation status,
+// generating and sending a new token, and committing the transaction.
 func (handler *UserHandler) ResendToken(w http.ResponseWriter, r *http.Request) {
 	// Begin a new transaction
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
@@ -234,7 +241,8 @@ func (handler *UserHandler) ResendToken(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// ChangeTrivialInformation changes the nickname and status of the user specified in the path.
+// ChangeTrivialInformation handles changes to trivial information of the user like nickname and status by
+// validating the request, updating the information in the database, and committing the transaction.
 func (handler *UserHandler) ChangeTrivialInformation(w http.ResponseWriter, r *http.Request) {
 	// Begin a new transaction
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
@@ -283,7 +291,8 @@ func (handler *UserHandler) ChangeTrivialInformation(w http.ResponseWriter, r *h
 	utils.WriteAndLogResponse(w, UserNicknameAndStatusDTO, http.StatusOK)
 }
 
-// ChangePassword changes the password of the user specified in the path.
+// ChangePassword handles changing the password of the user by validating the request, checking the old password,
+// hashing the new password, updating the password in the database, and committing the transaction.
 func (handler *UserHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	// Begin a new transaction
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
@@ -341,7 +350,8 @@ func (handler *UserHandler) ChangePassword(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// LoginUser logs in the user specified in the request body and returns a token pair.
+// LoginUser handles user login by validating the request, checking user existence, activation status, and password correctness,
+// generating a new token pair, and committing the transaction.
 func (handler *UserHandler) LoginUser(w http.ResponseWriter, r *http.Request) {
 	// Begin a new transaction
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
@@ -406,7 +416,8 @@ func (handler *UserHandler) LoginUser(w http.ResponseWriter, r *http.Request) {
 	utils.WriteAndLogResponse(w, tokenDto, http.StatusOK)
 }
 
-// HandleGetUserRequest returns the user profile of the user specified in the path.
+// HandleGetUserRequest handles fetching a user profile based on the username in the path parameter
+// and sends the profile data along with the number of posts, followers, and followings.
 func (handler *UserHandler) HandleGetUserRequest(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithDeadline(r.Context(), time.Now().Add(10*time.Second))
 	defer func() {
@@ -470,7 +481,7 @@ func (handler *UserHandler) HandleGetUserRequest(w http.ResponseWriter, r *http.
 	utils.WriteAndLogResponse(w, user, http.StatusOK)
 }
 
-// SearchUsers returns a list of users that match the search query using query parameters using offset and limit.
+// SearchUsers handles searching for users based on the search query in the request parameters and sends a paginated list of users.
 func (handler *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithDeadline(r.Context(), time.Now().Add(10*time.Second))
 	defer func() {
@@ -514,7 +525,8 @@ func (handler *UserHandler) SearchUsers(w http.ResponseWriter, r *http.Request) 
 	utils.SendPaginatedResponse(w, users, offset, limit, len(users))
 }
 
-// RefreshToken refreshes the token pair of the user.
+// RefreshToken handles refreshing the user's token by validating the request, extracting the user ID and username from the refresh token,
+// generating a new token pair, and sending it in the response.
 func (handler *UserHandler) RefreshToken(w http.ResponseWriter, r *http.Request) {
 	// Get the refresh token from the request body
 	refreshTokenRequest := &schemas.RefreshTokenRequest{}
@@ -555,7 +567,7 @@ func (handler *UserHandler) RefreshToken(w http.ResponseWriter, r *http.Request)
 	utils.WriteAndLogResponse(w, tokenDto, http.StatusOK)
 }
 
-// retrieveUserIdAndEmail retrieves the user ID and email of the user specified by the username.
+// RetrieveUserPosts handles fetching posts of a user based on the username in the path parameter and sends a paginated list of posts.
 func retrieveUserIdAndEmail(transactionCtx context.Context, w http.ResponseWriter, tx pgx.Tx, username string) (string, uuid.UUID, bool) {
 	// Get the user ID
 	queryString := "SELECT email, user_id FROM alpha_schema.users WHERE username = $1"

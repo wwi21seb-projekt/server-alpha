@@ -10,19 +10,24 @@ import (
 	"time"
 )
 
+// MailMgr defines the interface for managing email operations.
+// It provides methods for sending activation and confirmation emails.
 type MailMgr interface {
 	SendActivationMail(email, username, token, serviceName string) error
 	SendConfirmationMail(email, username, serviceName string) error
 }
 
+// MailManager handles sending emails using the Mailgun service and formatting emails using the Hermes package.
 type MailManager struct {
 	Hermes  *hermes.Hermes
 	Mailgun *mailgun.MailgunImpl
 }
 
-var from = "Server Alpha <team@mail.server-alpha.tech>"
-var environment string
+var from = "Server Alpha <team@mail.server-alpha.tech>" // Default sender email address.
+var environment string                                  // The current runtime environment (e.g., 'production').
 
+// SendActivationMail sends an email with an activation token to the specified user.
+// It formats the email content using Hermes and sends it using Mailgun.
 func (mm *MailManager) SendActivationMail(email, username, token, serviceName string) error {
 	if environment != "production" {
 		log.Info("Skipping confirmation mail in development mode")
@@ -73,6 +78,8 @@ func (mm *MailManager) SendActivationMail(email, username, token, serviceName st
 	return nil
 }
 
+// SendConfirmationMail sends a confirmation email to the specified user after their account is activated.
+// It formats the email content using Hermes and sends it using Mailgun.
 func (mm *MailManager) SendConfirmationMail(email, username, serviceName string) error {
 	if environment != "production" {
 		log.Info("Skipping confirmation mail in development mode")
@@ -118,6 +125,8 @@ func (mm *MailManager) SendConfirmationMail(email, username, serviceName string)
 	return nil
 }
 
+// NewMailManager initializes a new MailManager instance with configured Mailgun and Hermes settings.
+// It also checks the runtime environment to determine if emails should be sent.
 func NewMailManager() MailMgr {
 	log.Info("Initializing mail manager")
 	// Check if running in production

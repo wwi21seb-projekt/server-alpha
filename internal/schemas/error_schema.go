@@ -1,13 +1,12 @@
 package schemas
 
-// CustomError is a struct that represents a custom error
-// Message is the error message
-// Code is the error code
+// CustomError represents a structured format for an error that can be returned to the client.
 type CustomError struct {
-	Message string `json:"message"`
-	Code    string `json:"code"`
+	Message string `json:"message"` // Human-readable message providing more details about the error.
+	Code    string `json:"code"`    // Unique code identifying the type of error.
 }
 
+// Predefined custom errors with specific messages and codes.
 var (
 	BadRequest = &CustomError{
 		Message: "The request body is invalid. Please check the request body and try again.",

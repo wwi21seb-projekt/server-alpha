@@ -1,3 +1,4 @@
+// Package handlers implements the handlers for the different routes of the server to handle the incoming HTTP requests.
 package handlers
 
 import (
@@ -20,6 +21,7 @@ import (
 	"github.com/google/uuid"
 )
 
+// PostHdl defines the interface for handling post-related HTTP requests.
 type PostHdl interface {
 	CreatePost(w http.ResponseWriter, r *http.Request)
 	DeletePost(w http.ResponseWriter, r *http.Request)
@@ -27,14 +29,16 @@ type PostHdl interface {
 	HandleGetFeedRequest(w http.ResponseWriter, r *http.Request)
 }
 
+// PostHandler provides methods to handle post-related HTTP requests.
 type PostHandler struct {
 	DatabaseManager managers.DatabaseMgr
 	JWTManager      managers.JWTMgr
 	Validator       *utils.Validator
 }
 
-var hashtagRegex = regexp.MustCompile(`#\w+`)
+var hashtagRegex = regexp.MustCompile(`#\w+`) // Regular expression to find hashtags in content.
 
+// NewPostHandler returns a new PostHandler with the provided managers and validator.
 func NewPostHandler(databaseManager *managers.DatabaseMgr, jwtManager *managers.JWTMgr) PostHdl {
 	return &PostHandler{
 		DatabaseManager: *databaseManager,
@@ -43,7 +47,9 @@ func NewPostHandler(databaseManager *managers.DatabaseMgr, jwtManager *managers.
 	}
 }
 
-// CreatePost Creates a new post
+// CreatePost handles the creation of a new post. It begins a new transaction, validates the request payload,
+// extracts the user ID from JWT token, inserts the post data into the database, handles hashtags,
+// and commits the transaction.
 func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 	// Begin a new transaction
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
@@ -154,7 +160,8 @@ func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 	utils.WriteAndLogResponse(w, post, http.StatusCreated)
 }
 
-// DeletePost Deletes a post with the given id
+// DeletePost handles the deletion of a post by ID. It verifies the user's authorization to delete the post,
+// deletes the post and its associated hashtags if they are no longer used, and commits the transaction.
 func (handler *PostHandler) DeletePost(w http.ResponseWriter, r *http.Request) {
 	// Begin a new transaction
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
@@ -224,7 +231,8 @@ func (handler *PostHandler) DeletePost(w http.ResponseWriter, r *http.Request) {
 	utils.WriteAndLogResponse(w, nil, http.StatusNoContent)
 }
 
-// QueryPosts Queries posts based on the given parameters
+// QueryPosts handles querying of posts based on the provided query parameters. It builds the database query dynamically,
+// retrieves the count and records of matching posts, and creates a paginated response.
 func (handler *PostHandler) QueryPosts(w http.ResponseWriter, r *http.Request) {
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
 	if tx == nil || transactionCtx == nil {
@@ -284,7 +292,8 @@ func (handler *PostHandler) QueryPosts(w http.ResponseWriter, r *http.Request) {
 	utils.WriteAndLogResponse(w, paginatedResponse, http.StatusOK)
 }
 
-// HandleGetFeedRequest Handles a request to get a feed, depending on the feed type
+// HandleGetFeedRequest handles requests to retrieve a feed. It determines the feed type (public or private),
+// retrieves the appropriate feed based on the user's subscriptions if needed, and creates a paginated response.
 func (handler *PostHandler) HandleGetFeedRequest(w http.ResponseWriter, r *http.Request) {
 	// Begin a new transaction
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
@@ -316,7 +325,7 @@ func (handler *PostHandler) HandleGetFeedRequest(w http.ResponseWriter, r *http.
 	utils.WriteAndLogResponse(w, paginatedResponse, http.StatusOK)
 }
 
-// createPaginatedResponse Creates a paginated response based on the given parameters
+// CreatePaginatedResponse creates a paginated response for a list of posts based on the provided parameters.
 func createPaginatedResponse(posts []*schemas.PostDTO, lastPostId, limit string, records int) *schemas.PaginatedResponse {
 	// Get the last post ID
 	if len(posts) > 0 {
@@ -337,7 +346,8 @@ func createPaginatedResponse(posts []*schemas.PostDTO, lastPostId, limit string,
 	return paginatedResponse
 }
 
-// determineFeedType Determines the feed type based on the request
+// DetermineFeedType determines the type of feed requested based on the presence and content of the JWT token
+// and the 'feedType' query parameter.
 func determineFeedType(r *http.Request, w http.ResponseWriter, handler *PostHandler) (bool, jwt.Claims, error) {
 	// Get UserId from JWT token
 	authHeader := r.Header.Get("Authorization")
@@ -370,7 +380,9 @@ func determineFeedType(r *http.Request, w http.ResponseWriter, handler *PostHand
 	return publicFeedWanted, claims, nil
 }
 
-// retrieveFeed Retrieves a feed based on the given parameters
+// RetrieveFeed retrieves the appropriate feed based on whether a public or private feed is requested.
+// It builds the database query dynamically based on the feed type and user input, retrieves the posts,
+// and returns the posts along with pagination details.
 func retrieveFeed(ctx context.Context, tx pgx.Tx, w http.ResponseWriter, r *http.Request, publicFeedWanted bool,
 	claims jwt.Claims) ([]*schemas.PostDTO, int, string, string, error) {
 	queryParams := r.URL.Query()
@@ -432,7 +444,8 @@ func retrieveFeed(ctx context.Context, tx pgx.Tx, w http.ResponseWriter, r *http
 	return posts, count, lastPostId, limit, nil
 }
 
-// retrieveCountAndRecords Retrieves the count and records based on the given queries
+// RetrieveCountAndRecords retrieves the count of posts that match the criteria and the corresponding post records.
+// It executes the provided count and data queries, processes the results, and returns the post count along with the post DTOs.
 func retrieveCountAndRecords(ctx context.Context, tx pgx.Tx, countQuery string, countQueryArgs []interface{},
 	dataQuery string, dataQueryArgs []interface{}) (int, []*schemas.PostDTO, *schemas.CustomError, int, error) {
 	// Get the count of posts in the database that match the criteria
@@ -483,7 +496,7 @@ func retrieveCountAndRecords(ctx context.Context, tx pgx.Tx, countQuery string, 
 	return count, posts, nil, 0, nil
 }
 
-// parseLimitAndPostId Parses the limit and post ID from the query parameters with default values if necessary
+// parseLimitAndPostId parses the 'limit' and 'lastPostId' from the query parameters and provides default values if necessary.
 func parseLimitAndPostId(limit, lastPostId string) (string, string) {
 	intLimit, err := strconv.Atoi(limit)
 	if err != nil || intLimit > 10 || intLimit < 1 {

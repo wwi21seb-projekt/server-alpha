@@ -1,3 +1,4 @@
+// package internal contains the core functionality and configurations of the server.
 package internal
 
 import (
@@ -16,10 +17,12 @@ import (
 )
 
 const (
-	port    = ":8080"
-	envFile = ".env"
+	port    = ":8080" // Default port where the server listens for requests.
+	envFile = ".env"  // Path to the file containing environment variables.
 )
 
+// Init initializes the server by loading environment variables, setting up logging, connecting to the database,
+// initializing managers (Database, Mail, JWT), setting up routing, and starting the HTTP server.
 func Init() {
 	err := godotenv.Load(envFile)
 	if err != nil {
@@ -71,6 +74,8 @@ func Init() {
 	}
 }
 
+// initializeDatabase sets up the connection pool for the PostgreSQL database.
+// It reads the database configuration from environment variables and establishes a connection.
 func initializeDatabase() *pgxpool.Pool {
 	log.Info("Initializing database")
 
@@ -105,6 +110,8 @@ func initializeDatabase() *pgxpool.Pool {
 	return pool
 }
 
+// setLogLevel configures the logging level based on the LOG_LEVEL environment variable.
+// It also sets the logger to write to standard output and include the caller information.
 func setLogLevel(logLevel string) {
 	switch logLevel {
 	case "DEBUG":

@@ -1,3 +1,4 @@
+// package routing sets up the HTTP routing for the server.
 package routing
 
 import (
@@ -13,6 +14,8 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
+// InitRouter initializes and returns a new Chi router.
+// It sets up the routing rules, middleware, and handlers for different routes.
 func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtMgr managers.JWTMgr) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -100,6 +103,7 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 	return r
 }
 
+// userRouter sets up the routing rules for user-related endpoints.
 func userRouter(databaseMgr *managers.DatabaseMgr, jwtMgr managers.JWTMgr, mailMgr *managers.MailMgr) func(chi.Router) {
 	return func(r chi.Router) {
 		userHdl := handlers.NewUserHandler(databaseMgr, &jwtMgr, mailMgr)
