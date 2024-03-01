@@ -15,7 +15,7 @@ require (
 	github.com/matcornic/hermes/v2 v2.1.0
 	github.com/pashagolub/pgxmock/v3 v3.3.0
 	github.com/sirupsen/logrus v1.9.3
-	github.com/stretchr/testify v1.8.4
+	github.com/stretchr/testify v1.9.0
 	github.com/truemail-rb/truemail-go v1.1.3
 	golang.org/x/crypto v0.18.0
 )
@@ -71,7 +71,7 @@ require (
 	github.com/sanity-io/litter v1.5.5 // indirect
 	github.com/sergi/go-diff v1.3.1 // indirect
 	github.com/ssor/bom v0.0.0-20170718123548-6386211fdfcf // indirect
-	github.com/stretchr/objx v0.5.1 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.51.0 // indirect
 	github.com/vanng822/css v1.0.1 // indirect
