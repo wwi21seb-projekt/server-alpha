@@ -2,19 +2,18 @@
 package internal
 
 import (
-	"context"
 	"fmt"
-	log "github.com/sirupsen/logrus"
 	"net/http"
 	"os"
 	"os/signal"
 	"server-alpha/internal/managers"
 	"server-alpha/internal/utils"
-	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/joho/godotenv"
+	log "github.com/sirupsen/logrus"
+
 	"server-alpha/internal/routing"
+
+	"github.com/joho/godotenv"
 )
 
 const (
@@ -36,13 +35,18 @@ func Init() {
 	setLogLevel(logLevel)
 	utils.LogMessage("debug", fmt.Sprintf("Environment variables: %v", os.Environ()))
 
-	// Connect to database
-	pool := initializeDatabase()
-
-	defer pool.Close()
-
 	// Initialize database manager
-	databaseMgr := managers.NewDatabaseManager(pool)
+	databaseMgr, err := managers.NewDatabaseManager()
+	if err != nil {
+		panic(err)
+	}
+	defer databaseMgr.ClosePool()
+
+	// Generate sql builder files
+	err = databaseMgr.GenerateCode("internal/gen", "alpha_schema")
+	if err != nil {
+		utils.LogMessage("fatal", "Error generating SQL builder files: "+err.Error())
+	}
 
 	// Initialize mail manager
 	mailMgr := managers.NewMailManager()
@@ -74,45 +78,6 @@ func Init() {
 		utils.LogMessage("fatal", "Error starting server")
 		panic(err)
 	}
-}
-
-// initializeDatabase sets up the connection pool for the PostgreSQL database.
-// It reads the database configuration from environment variables and establishes a connection.
-func initializeDatabase() *pgxpool.Pool {
-	utils.LogMessage("info", "Initializing database")
-
-	var (
-		dbHost     = os.Getenv("DB_HOST")
-		dbPort     = os.Getenv("DB_PORT")
-		dbUser     = os.Getenv("DB_USER")
-		dbPassword = os.Getenv("DB_PASS")
-		dbName     = os.Getenv("DB_NAME")
-	)
-
-	if dbHost == "" || dbPort == "" || dbUser == "" || dbPassword == "" || dbName == "" {
-		utils.LogMessage("fatal", "Database environment variables not set")
-		panic("Database environment variables not set")
-	}
-
-	url := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable", dbHost, dbPort, dbUser, dbPassword, dbName)
-	config, err := pgxpool.ParseConfig(url)
-	if err != nil {
-		utils.LogMessage("fatal", "Error configuring database")
-		panic(err)
-	}
-
-	config.MinConns = 5
-	config.MaxConns = 30
-	config.MaxConnIdleTime = time.Minute * 2
-	config.HealthCheckPeriod = time.Minute * 1
-
-	pool, err := pgxpool.NewWithConfig(context.Background(), config)
-	if err != nil {
-		utils.LogMessage("fatal", "Error connecting to database")
-		panic(err)
-	}
-	utils.LogMessage("info", "Initialized database")
-	return pool
 }
 
 // setLogLevel configures the logging level based on the LOG_LEVEL environment variable.
