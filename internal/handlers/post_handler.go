@@ -5,9 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"net/http"
 	"regexp"
 	"server-alpha/internal/managers"
@@ -16,6 +13,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -37,7 +38,7 @@ type PostHandler struct {
 }
 
 var hashtagRegex = regexp.MustCompile(`#\w+`)
-var transactionErr = errors.New("error beginning transaction")
+var errTransaction = errors.New("error beginning transaction")
 
 // NewPostHandler returns a new PostHandler with the provided managers and validator.
 func NewPostHandler(databaseManager *managers.DatabaseMgr, jwtManager *managers.JWTMgr) PostHdl {
@@ -56,7 +57,7 @@ func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
 	if tx == nil || transactionCtx == nil {
 		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError,
-			transactionErr)
+			errTransaction)
 		return
 	}
 	var err error
@@ -169,7 +170,7 @@ func (handler *PostHandler) DeletePost(w http.ResponseWriter, r *http.Request) {
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
 	if tx == nil || transactionCtx == nil {
 		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError,
-			transactionErr)
+			errTransaction)
 		return
 	}
 	var err error
@@ -241,7 +242,7 @@ func (handler *PostHandler) QueryPosts(w http.ResponseWriter, r *http.Request) {
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
 	if tx == nil || transactionCtx == nil {
 		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError,
-			transactionErr)
+			errTransaction)
 		return
 	}
 	var err error
@@ -304,7 +305,7 @@ func (handler *PostHandler) HandleGetFeedRequest(w http.ResponseWriter, r *http.
 	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
 	if tx == nil || transactionCtx == nil {
 		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError,
-			transactionErr)
+			errTransaction)
 		return
 	}
 	var err error
