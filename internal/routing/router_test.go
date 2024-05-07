@@ -230,6 +230,252 @@ func TestUserLogin(t *testing.T) {
 	}
 }
 
+func TestChangeTrivialInformation(t *testing.T) {
+	userId := "1752e5cc-77a4-4913-9924-63a439654a8e"
+	username := "testUser"
+	nickname := "tester"
+	userStatus := "test status"
+
+	testCases := []struct {
+		name           string
+		userId         string
+		username       string
+		jwtToken       string
+		nickname       string
+		userStatus     string
+		responseStatus int
+		responseBody   map[string]interface{}
+	}{
+		{
+			"Successful",
+			userId,
+			username,
+			"",
+			nickname,
+			userStatus,
+			http.StatusOK,
+			map[string]interface{}{
+				"nickname": nickname,
+				"status":   userStatus,
+			},
+		},
+		{
+			"Bad Request",
+			userId,
+			username,
+			"",
+			"ThisNicknameIsWayTooLongForTheGivenLimit",
+			"ThisStatusIsAlsoWayTooLongForTheGivenLimitThisStatusIsAlsoWayTooLongForTheGivenLimitThisStatusIsAlsoWayTooLongForTheGivenLimitThisStatusIsAlsoWayTooLongForTheGivenLimitThisStatusIsAlsoWayTooLongForTheGivenLimitThisStatusIsAlsoWayTooLongForTheGivenLimitThisStatusIsAlsoWayTooLongForTheGivenLimitThisStatusIsAlsoWayTooLongForTheGivenLimit",
+			http.StatusBadRequest,
+			map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": "The request body is invalid. Please check the request body and try again.",
+					"code":    "ERR-001",
+				},
+			},
+		},
+		{
+			"Unauthorized",
+			userId,
+			username,
+			"Nonsense Token",
+			nickname,
+			userStatus,
+			http.StatusUnauthorized,
+			map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": "The request is unauthorized. Please login to your account.",
+					"code":    "ERR-014",
+				},
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Setup mocks
+			databaseMgrMock, jwtManager, mailMgrMock := setupMocks(t)
+
+			// Initialize router
+			router := InitRouter(databaseMgrMock, mailMgrMock, jwtManager)
+
+			// Create test server
+			server := httptest.NewServer(router)
+			defer server.Close()
+
+			// Generate JWT token if not already set
+			if tc.jwtToken == "" {
+				tc.jwtToken, _ = jwtManager.GenerateJWT(tc.userId, tc.username, false)
+			}
+
+			// Get mock pool
+			poolMock := databaseMgrMock.GetPool().(pgxmock.PgxPoolIface)
+
+			if tc.name != "Unauthorized" {
+				poolMock.ExpectBegin()
+				if tc.name == "Successful" {
+					poolMock.ExpectExec("UPDATE").
+						WithArgs(tc.nickname, tc.userStatus, tc.userId).
+						WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+					poolMock.ExpectCommit()
+				}
+			}
+
+			// Create request and get response
+			expect := httpexpect.Default(t, server.URL)
+			request := expect.PUT("/api/users/").
+				WithHeader("Authorization", "Bearer "+tc.jwtToken).
+				WithJSON(map[string]interface{}{
+					"nickname": tc.nickname,
+					"status":   tc.userStatus,
+				})
+			response := request.Expect().Status(tc.responseStatus)
+
+			// Assert response
+			response.JSON().IsEqual(tc.responseBody)
+
+			// Check if all expectations were met
+			if err := poolMock.ExpectationsWereMet(); err != nil {
+				t.Errorf("there were unfulfilled expectations: %s", err)
+			}
+		})
+	}
+}
+
+func TestChangePassword(t *testing.T) {
+	userId := "1752e5cc-77a4-4913-9924-63a439654a8e"
+	username := "testUser"
+	validOldPassword := "Validpassword123#"
+	validNewPassword := "Validpassword456#"
+
+	testCases := []struct {
+		name         string
+		userId       string
+		username     string
+		jwtToken     string
+		oldPassword  string
+		newPassword  string
+		status       int
+		responseBody map[string]interface{}
+	}{
+		{
+			"Successful",
+			userId,
+			username,
+			"",
+			validOldPassword,
+			validNewPassword,
+			http.StatusNoContent,
+			map[string]interface{}{},
+		},
+		{
+			"Bad Request",
+			userId,
+			username,
+			"",
+			"Invalidpassword123",
+			"invalidpassword#456",
+			http.StatusBadRequest,
+			map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": "The request body is invalid. Please check the request body and try again.",
+					"code":    "ERR-001",
+				},
+			},
+		},
+		{
+			"Unauthorized",
+			userId,
+			username,
+			"invalidJWTToken",
+			validOldPassword,
+			validNewPassword,
+			http.StatusUnauthorized,
+			map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": "The request is unauthorized. Please login to your account.",
+					"code":    "ERR-014",
+				},
+			},
+		},
+		{
+			"Wrong old password",
+			userId,
+			username,
+			"",
+			validOldPassword,
+			validNewPassword,
+			http.StatusForbidden,
+			map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": "The credentials are invalid. Please check the credentials and try again.",
+					"code":    "ERR-008",
+				},
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Setup mocks
+			databaseMgrMock, jwtManager, mailMgrMock := setupMocks(t)
+
+			// Initialize router
+			router := InitRouter(databaseMgrMock, mailMgrMock, jwtManager)
+
+			// Create test server
+			server := httptest.NewServer(router)
+			defer server.Close()
+
+			// Generate JWT token if not already set
+			if tc.jwtToken == "" {
+				tc.jwtToken, _ = jwtManager.GenerateJWT(tc.userId, tc.username, false)
+			}
+
+			// Get mock pool
+			poolMock := databaseMgrMock.GetPool().(pgxmock.PgxPoolIface)
+
+			oldPasswordHash, _ := bcrypt.GenerateFromPassword([]byte(tc.oldPassword), bcrypt.DefaultCost)
+			wrongOldPasswordHash, _ := bcrypt.GenerateFromPassword([]byte(tc.oldPassword+"x"), bcrypt.DefaultCost)
+
+			if tc.name != "Unauthorized" {
+				poolMock.ExpectBegin()
+			}
+			if tc.name == "Wrong old password" {
+				poolMock.ExpectQuery("SELECT").WithArgs(tc.username).
+					WillReturnRows(pgxmock.NewRows([]string{"password", "userId"}).
+						AddRow(string(wrongOldPasswordHash), tc.userId))
+			}
+			if tc.name == "Successful" {
+				poolMock.ExpectQuery("SELECT").WithArgs(tc.username).
+					WillReturnRows(pgxmock.NewRows([]string{"password", "userId"}).
+						AddRow(string(oldPasswordHash), tc.userId))
+				poolMock.ExpectExec("UPDATE").WithArgs(pgxmock.AnyArg(), tc.userId).
+					WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+				poolMock.ExpectCommit()
+			}
+
+			// Create request and get response
+			expect := httpexpect.Default(t, server.URL)
+			request := expect.PATCH("/api/users/").
+				WithHeader("Authorization", "Bearer "+tc.jwtToken).
+				WithJSON(map[string]interface{}{
+					"oldPassword": tc.oldPassword,
+					"newPassword": tc.newPassword,
+				})
+			response := request.Expect().Status(tc.status)
+
+			if tc.name != "Successful" {
+				// Assert response
+				response.JSON().IsEqual(tc.responseBody)
+			}
+
+			// Check if all expectations were met
+			if err := poolMock.ExpectationsWereMet(); err != nil {
+				t.Errorf("there were unfulfilled expectations: %s", err)
+			}
+		})
+	}
+}
+
 func TestImprint(t *testing.T) {
 
 	testCases := []struct {
@@ -543,7 +789,6 @@ func TestGetSubscriptions(t *testing.T) {
 			// Get mock pool
 			poolMock := databaseMgrMock.GetPool().(pgxmock.PgxPoolIface)
 
-			poolMock.ExpectBegin()
 			// Mock database calls
 			for _, mock := range tc.dbCalls {
 				if mock.Query != "" {

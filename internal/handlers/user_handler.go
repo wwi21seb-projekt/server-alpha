@@ -250,7 +250,7 @@ func (handler *UserHandler) ChangeTrivialInformation(w http.ResponseWriter, r *h
 		return
 	}
 
-	// Validate the nickname change request struct using the validator
+	// Validate the trivial information change request struct using the validator
 	if err := utils.ValidateStruct(w, changeTrivialInformationRequest); err != nil {
 		return
 	}
