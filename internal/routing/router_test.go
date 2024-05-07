@@ -288,6 +288,133 @@ func TestImprint(t *testing.T) {
 	}
 }
 
+func TestCreatePost(t *testing.T) {
+	userId := "1752e5cc-77a4-4913-9924-63a439654a8e"
+	username := "testUser"
+	postId := "4d9e0a1d-faa6-473d-a5cb-fadabb2db590"
+
+	testCases := []struct {
+		name         string
+		status       int
+		userId       string
+		username     string
+		post         map[string]interface{}
+		responseBody map[string]interface{}
+	}{
+		{
+			"SucessfulPost",
+			http.StatusCreated,
+			userId,
+			username,
+			map[string]interface{}{
+				"content": "test content",
+				"location": map[string]interface{}{ //optional
+					"longitude": 152.2,
+					"latitude":  -40.2,
+					"accuracy":  100, //meters
+				},
+			},
+			map[string]interface{}{
+				"postId": postId,
+				"author": map[string]interface{}{
+					"username":          "testUser",
+					"nickname":          "",
+					"profilePictureURL": "",
+				},
+				"creationDate": "2024-02-01T16:18:48+01:00",
+				"content":      "test content",
+				"location": map[string]interface{}{
+					"longitude": 152.2,
+					"latitude":  -40.2,
+					"accuracy":  100,
+				},
+			},
+		},
+		{
+			"UnauthoriedPost",
+			http.StatusUnauthorized,
+			"",
+			"",
+			map[string]interface{}{
+				"content": "test content",
+				"location": map[string]interface{}{ //optional
+					"longitude": 152.2,
+					"latitude":  -40.2,
+					"accuracy":  100, //meters
+				},
+			},
+			map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": "The request is unauthorized. Please login to your account.",
+					"code":    "ERR-014",
+				},
+			},
+		},
+		{
+			"BadRequestPost",
+			http.StatusBadRequest,
+			userId,
+			username,
+			map[string]interface{}{
+				"post": "invalid format",
+			},
+			map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": "The request body is invalid. Please check the request body and try again.",
+					"code":    "ERR-001",
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Setup mocks
+			databaseMgrMock, jwtManager, mailMgrMock := setupMocks(t)
+
+			// Initialize router
+			router := InitRouter(databaseMgrMock, mailMgrMock, jwtManager)
+
+			// Create test server
+			server := httptest.NewServer(router)
+			defer server.Close()
+
+			// Generate JWT token if user is logged in
+			jwtToken := ""
+			if tc.userId == "" && tc.username == "" {
+				jwtToken = "invalidToken"
+			} else {
+				jwtToken, _ = jwtManager.GenerateJWT(tc.userId, tc.username, false)
+			}
+
+			// Get mock pool
+			poolMock := databaseMgrMock.GetPool().(pgxmock.PgxPoolIface)
+
+			// Mock database calls
+			if tc.name == "SucessfulPost" {
+				poolMock.ExpectBegin()
+				poolMock.ExpectExec("INSERT").WithArgs("4d9e0a1d-faa6-473d-a5cb-fadabb2db590", tc.userId, "test content", func() time.Time {
+					t, _ := time.Parse(time.RFC3339, "2024-02-01T16:18:48+01:00")
+					return t
+				}(), 152.2, 40.2, 100).WillReturnResult(pgxmock.NewResult("INSERT", 1))
+			}
+
+			// Create request and get response
+			expect := httpexpect.Default(t, server.URL)
+			request := expect.POST("/api/posts/").WithJSON(tc.post).WithHeader("Authorization", "Bearer "+jwtToken)
+			response := request.Expect().Status(tc.status)
+
+			// Assert response
+			response.JSON().IsEqual(tc.responseBody)
+
+			// Check if all expectations were met
+			if err := poolMock.ExpectationsWereMet(); err != nil {
+				t.Errorf("there were unfulfilled expectations: %s", err)
+			}
+		})
+	}
+}
+
 func TestGetSubscriptions(t *testing.T) {
 	userId := "1752e5cc-77a4-4913-9924-63a439654a8e"
 	username := "testUser"
