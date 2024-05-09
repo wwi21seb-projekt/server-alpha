@@ -1,39 +1,40 @@
-package utils
+package validators
 
 import (
-	"github.com/go-playground/validator/v10"
-	"github.com/truemail-rb/truemail-go"
+	"reflect"
 	"regexp"
 	"server-alpha/internal/schemas"
+	"strings"
 	"sync"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/go-playground/validator/v10"
+	"github.com/microcosm-cc/bluemonday"
+	"github.com/truemail-rb/truemail-go"
 )
 
-// Validator encapsulates validation logic for various types of data.
-// It uses the validator package for general validation and truemail for email verification.
+var instance *Validator
+var once sync.Once
+
 type Validator struct {
-	Validate    *validator.Validate
-	VerifyEmail func(email string) bool
+	SanitizeData func(data interface{})
+	Validate     *validator.Validate
+	VerifyEmail  func(email string) bool
 }
 
-var instance *Validator
-var configuration *truemail.Configuration
-
-// GetValidator returns a singleton instance of Validator.
-// It initializes the instance with custom validators and email verification configuration on the first call.
 func GetValidator() *Validator {
-	once := sync.Once{}
 	once.Do(func() {
-		configuration, _ = truemail.NewConfiguration(truemail.ConfigurationAttr{
+		configuration, _ := truemail.NewConfiguration(truemail.ConfigurationAttr{
 			VerifierEmail:         "team@mail.server-alpha.tech",
 			ValidationTypeDefault: "mx",
 			SmtpFailFast:          true,
 		})
-
+		sanitizer := bluemonday.UGCPolicy()
 		instance = &Validator{
-			Validate:    validator.New(validator.WithRequiredStructEnabled()),
-			VerifyEmail: validateEmail,
+			SanitizeData: func(data interface{}) { sanitizeData(sanitizer, data) },
+			Validate:     validator.New(),
+			VerifyEmail:  func(email string) bool { return truemail.IsValid(email, configuration) },
 		}
 
 		registerCustomValidators(instance.Validate)
@@ -42,12 +43,26 @@ func GetValidator() *Validator {
 	return instance
 }
 
-// ValidateEmail uses truemail to verify the format and domain of an email address.
-func validateEmail(email string) bool {
-	return truemail.IsValid(email, configuration)
+// SanitizeData uses reflection to sanitize all string fields of a struct
+func sanitizeData(policy *bluemonday.Policy, data interface{}) {
+	v := reflect.ValueOf(data).Elem() // Use Elem to dereference the pointer if necessary
+
+	for i := 0; i < v.NumField(); i++ {
+		field := v.Field(i)
+		if field.Kind() == reflect.String {
+			originalText := field.String()
+			sanitizedText := policy.Sanitize(strings.TrimSpace(originalText))
+			field.SetString(sanitizedText)
+		}
+		// Handle nested structs recursively
+		if field.Kind() == reflect.Struct {
+			sanitizeData(field.Addr().Interface())
+		}
+	}
 }
 
-// RegisterCustomValidators registers custom validators for username, password, post, and location fields.
+// RegisterCustomValidators registers custom validators for our
+// application-specific fields.
 func registerCustomValidators(v *validator.Validate) {
 	_ = v.RegisterValidation("username_validation", usernameValidation)
 	_ = v.RegisterValidation("password_validation", passwordValidation)
@@ -113,21 +128,17 @@ func locationValidation(fl validator.FieldLevel) bool {
 	if location == (schemas.LocationDTO{}) {
 		return true
 	}
-
 	// Check if the longitude is valid
 	if location.Longitude < -180 || location.Longitude > 180 {
 		return false
 	}
-
 	// Check if the latitude is valid
 	if location.Latitude < -90 || location.Latitude > 90 {
 		return false
 	}
-
 	// Check if the accuracy is valid
 	if location.Accuracy < 0 {
 		return false
 	}
-
 	return true
 }

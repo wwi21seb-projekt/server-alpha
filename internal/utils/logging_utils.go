@@ -2,10 +2,11 @@ package utils
 
 import (
 	"context"
+	"os"
+
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
-	"net/http"
-	"os"
 )
 
 type CustomTextFormatter struct{}
@@ -100,10 +101,10 @@ func LogMessageWithFieldsAndError(ctx context.Context, level, message string, er
 	logEntry(entry, level, message)
 }
 
-func LogRequest(ctx context.Context, r *http.Request) {
+func LogRequest(ctx *gin.Context) {
 	traceId := ctx.Value(TraceIdKey).(string)
 	service := extractServiceName()
-	message := "Request received: " + r.Method + " " + r.URL.Path
+	message := "Request received: " + ctx.Request.Method + " " + ctx.Request.URL.Path
 
 	entry := log.WithFields(log.Fields{
 		"traceId": traceId,

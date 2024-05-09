@@ -3,7 +3,6 @@ package routing
 
 import (
 	"context"
-	"github.com/go-chi/cors"
 	"net/http"
 	"os"
 	"server-alpha/internal/handlers"
@@ -11,6 +10,8 @@ import (
 	"server-alpha/internal/schemas"
 	"server-alpha/internal/utils"
 	"time"
+
+	"github.com/go-chi/cors"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
