@@ -50,7 +50,7 @@ func setupCommonMiddleware(router *gin.Engine) {
 		ExposeHeaders: []string{"Content-Length", "Content-Type", "X-Correlation-ID"},
 		MaxAge:        12 * time.Hour,
 	}))
-	router.Use(func (c *gin.Context) {
+	router.Use(func(c *gin.Context) {
 		c.Header("Content-Type", "application/json")
 	})
 }
@@ -97,7 +97,7 @@ func setupRoutes(router *gin.Engine, databaseMgr managers.DatabaseMgr, mailMgr m
 
 		// Set up user routes
 		userRouter := apiRouter.Group("/users")
-		userHdl := handlers.NewUserHandler(databaseMgr, jwtMgr, mailMgr)
+		userHdl := handlers.NewUserHandler(&databaseMgr, &jwtMgr, &mailMgr)
 		userRoutes(userRouter, userHdl)
 
 		// Set up post routes
@@ -111,15 +111,19 @@ func setupRoutes(router *gin.Engine, databaseMgr managers.DatabaseMgr, mailMgr m
 		subscriptionHdl := handlers.NewSubscriptionHandler(&databaseMgr)
 		subscriptionsRoutes(subscriptionsRouter, subscriptionHdl)
 	}
-	}
+}
 
-	func userRoutes(apiRouter *gin.RouterGroup, userHdl handlers.UserHdl) {
-		apiRouter.POST("/register", userHdl.RegisterUser())
-	}
+func userRoutes(apiRouter *gin.RouterGroup, userHdl handlers.UserHdl) {
+	apiRouter.POST("/register", userHdl.RegisterUser)
+}
 
-	func postRoutes(apiRouter *gin.RouterGroup, postHdl handlers.PostHdl) {
-		apiRouter.POST("/", middleware.ValidateAndSanitizeStruct(schemas.CreatePostRequest{}), postHdl.CreatePost)
-		apiRouter.GET("/", postHdl.QueryPosts)
-		apiRouter.DELETE("/:postId", postHdl.DeletePost)
-	}
+func postRoutes(apiRouter *gin.RouterGroup, postHdl handlers.PostHdl) {
+	apiRouter.POST("/", middleware.ValidateAndSanitizeStruct(schemas.CreatePostRequest{}), postHdl.CreatePost)
+	apiRouter.GET("/", postHdl.QueryPosts)
+	apiRouter.DELETE("/:postId", postHdl.DeletePost)
+}
+
+func subscriptionsRoutes(apiRouter *gin.RouterGroup, subscriptionHdl handlers.SubscriptionHdl) {
+	apiRouter.POST("/", middleware.ValidateAndSanitizeStruct(schemas.SubscriptionRequest{}), subscriptionHdl.Subscribe)
+	apiRouter.DELETE("/:subscriptionId", subscriptionHdl.Unsubscribe)
 }
