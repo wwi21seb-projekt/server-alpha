@@ -10,7 +10,6 @@ import (
 	"server-alpha/internal/utils"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -19,9 +18,9 @@ import (
 
 // SubscriptionHdl defines the interface for handling subscription-related HTTP requests.
 type SubscriptionHdl interface {
-	HandleGetSubscriptions(w http.ResponseWriter, r *http.Request)
-	Subscribe(w http.ResponseWriter, r *http.Request)
-	Unsubscribe(w http.ResponseWriter, r *http.Request)
+	HandleGetSubscriptions(ctx *gin.Context)
+	Subscribe(ctx *gin.Context)
+	Unsubscribe(ctx *gin.Context)
 }
 
 // SubscriptionHandler provides methods to handle subscription-related HTTP requests.
@@ -46,12 +45,12 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(ctx *gin.Context) {
 	// Get pagination parameters
 	offset, limit, err := utils.ParsePaginationParams(ctx)
 	if err != nil {
-		utils.WriteAndLogError(ctx, w, schemas.BadRequest, http.StatusBadRequest, err)
+		utils.WriteAndLogError(ctx, schemas.BadRequest, http.StatusBadRequest, err)
 		return
 	}
 
 	// Get subscription type from query params
-	subscriptionType := r.URL.Query().Get(utils.SubscriptionTypeParamKey)
+	subscriptionType := ctx.Query(utils.SubscriptionTypeParamKey)
 
 	// Get the followers by default
 	userTypes := []string{"subscriber", "subscribee"}
@@ -64,11 +63,11 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(ctx *gin.Context) {
 	findUserQuery := "SELECT user_id FROM alpha_schema.users WHERE username = $1"
 	rows, err := handler.DatabaseManager.GetPool().Query(ctx, findUserQuery, username)
 	if err != nil {
-		utils.WriteAndLogError(ctx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 	if !rows.Next() {
-		utils.WriteAndLogError(ctx, w, schemas.UserNotFound, http.StatusNotFound, errors.New("user not found"))
+		utils.WriteAndLogError(ctx, schemas.UserNotFound, http.StatusNotFound, errors.New("user not found"))
 		return
 	}
 
@@ -87,12 +86,12 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(ctx *gin.Context) {
 		"(SELECT user_id FROM alpha_schema.users WHERE username = $1)", userTypes[1])
 
 	// Get user id from jwt token
-	claims := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
+	claims := ctx.Value(utils.ClaimsKey).(jwt.MapClaims)
 	jwtUserId := claims["sub"].(string)
 
 	rows, err = handler.DatabaseManager.GetPool().Query(ctx, subscriptionQuery, jwtUserId, username)
 	if err != nil {
-		utils.WriteAndLogError(ctx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -103,7 +102,7 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(ctx *gin.Context) {
 		followerId, followingId := uuid.UUID{}, uuid.UUID{}
 
 		if err := rows.Scan(&followingId, &followerId, &subscription.Username, &subscription.Nickname, &subscription.ProfilePictureUrl); err != nil {
-			utils.WriteAndLogError(ctx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
+			utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
 			return
 		}
 
@@ -122,78 +121,70 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(ctx *gin.Context) {
 	row := handler.DatabaseManager.GetPool().QueryRow(ctx, countQuery, username)
 	var totalSubscriptions int
 	if err := row.Scan(&totalSubscriptions); err != nil {
-		utils.WriteAndLogError(ctx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
 	// Send response
-	utils.SendPaginatedResponse(ctx, w, results, offset, limit, totalSubscriptions)
+	utils.SendPaginatedResponse(ctx, results, offset, limit, totalSubscriptions)
 }
 
 // Subscribe handles creating a new subscription between the current user and the specified user in the request.
 // It validates the request, checks if the subscription already exists, creates a new subscription if it doesn't exist,
 // and sends the subscription details in the response.
-func (handler *SubscriptionHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
+func (handler *SubscriptionHandler) Subscribe(ctx *gin.Context) {
 	// Begin a new transaction
-	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
-	if tx == nil || transactionCtx == nil {
+	tx := utils.BeginTransaction(ctx, handler.DatabaseManager.GetPool())
+	if tx == nil {
 		return
 	}
 	var err error
-	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel, err)
+	defer utils.RollbackTransaction(ctx, tx, err)
 
 	// Decode the request body into the subscription request struct
-	subscriptionRequest := &schemas.SubscriptionRequest{}
-	if err := utils.DecodeRequestBody(transactionCtx, w, r, subscriptionRequest); err != nil {
-		return
-	}
-
-	// Validate the subscription request struct using the validator
-	if err := utils.ValidateStruct(transactionCtx, w, subscriptionRequest); err != nil {
-		return
-	}
+	subscriptionRequest := ctx.Value(utils.SanitizedPayloadKey).(schemas.SubscriptionRequest)
 
 	// Get subscribeeId from request body
 	queryString := "SELECT user_id FROM alpha_schema.users WHERE username = $1"
-	row := tx.QueryRow(transactionCtx, queryString, subscriptionRequest.Following)
+	row := tx.QueryRow(ctx, queryString, subscriptionRequest.Following)
 	var subscribeeId string
-	if err := row.Scan(&subscribeeId); err != nil {
+	if err = row.Scan(&subscribeeId); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			utils.WriteAndLogError(transactionCtx, w, schemas.UserNotFound, http.StatusNotFound, err)
+			utils.WriteAndLogError(ctx, schemas.UserNotFound, http.StatusNotFound, err)
 			return
 		}
 
-		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
 	// Get the user ID from the JWT token
-	claims := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
+	claims := ctx.Value(utils.ClaimsKey).(jwt.MapClaims)
 	jwtUserId := claims["sub"].(string)
 	jwtUsername := claims["username"].(string)
 
 	// Check and throw error if the user wants to subscribe to himself
 	if jwtUserId == subscribeeId {
-		utils.WriteAndLogError(transactionCtx, w, schemas.SubscriptionSelfFollow, http.StatusNotAcceptable,
+		utils.WriteAndLogError(ctx, schemas.SubscriptionSelfFollow, http.StatusNotAcceptable,
 			errors.New("user cannot subscribe to himself"))
 		return
 	}
 
 	// Check and throw error if the user is already subscribed to the user he wants to subscribe to
 	queryString = "SELECT subscription_id FROM alpha_schema.subscriptions WHERE subscriber_id = $1 AND subscribee_id = $2"
-	rows := tx.QueryRow(transactionCtx, queryString, jwtUserId, subscribeeId)
+	rows := tx.QueryRow(ctx, queryString, jwtUserId, subscribeeId)
 	var subscriptionId uuid.UUID
 
 	if err := rows.Scan(&subscriptionId); err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
-			utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
+			utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
 			return
 		}
 	}
 
 	if subscriptionId != uuid.Nil {
 		// User is already subscribed, since the subscriptionId is not nil
-		utils.WriteAndLogError(transactionCtx, w, schemas.SubscriptionAlreadyExists, http.StatusConflict,
+		utils.WriteAndLogError(ctx, schemas.SubscriptionAlreadyExists, http.StatusConflict,
 			errors.New("subscription already exists"))
 		return
 	}
@@ -202,9 +193,9 @@ func (handler *SubscriptionHandler) Subscribe(w http.ResponseWriter, r *http.Req
 	queryString = "INSERT INTO alpha_schema.subscriptions (subscription_id, subscriber_id, subscribee_id, created_at) VALUES ($1, $2, $3, $4)"
 	subscriptionId = uuid.New()
 	createdAt := time.Now()
-	if _, err := tx.Exec(transactionCtx, queryString, subscriptionId, jwtUserId, subscribeeId, createdAt); err != nil {
+	if _, err := tx.Exec(ctx, queryString, subscriptionId, jwtUserId, subscribeeId, createdAt); err != nil {
 		log.Errorf("error while inserting subscription: %v", err)
-		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -217,69 +208,69 @@ func (handler *SubscriptionHandler) Subscribe(w http.ResponseWriter, r *http.Req
 	}
 
 	// Commit the transaction
-	if err := utils.CommitTransaction(w, tx, transactionCtx, cancel); err != nil {
+	if err := utils.CommitTransaction(ctx, tx); err != nil {
 		return
 	}
 
 	// Send success response
-	utils.WriteAndLogResponse(transactionCtx, w, subscriptionDto, http.StatusCreated)
+	utils.WriteAndLogResponse(ctx, subscriptionDto, http.StatusCreated)
 }
 
 // Unsubscribe handles removing a subscription between the current user and the user specified by the subscription ID in the URL.
 // It validates the user's authorization to delete the subscription and removes the subscription if authorized.
-func (handler *SubscriptionHandler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
+func (handler *SubscriptionHandler) Unsubscribe(ctx *gin.Context) {
 	// Begin a new transaction
-	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
-	if tx == nil || transactionCtx == nil {
+	tx := utils.BeginTransaction(ctx, handler.DatabaseManager.GetPool())
+	if tx == nil {
 		return
 	}
 	var err error
-	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel, err)
+	defer utils.RollbackTransaction(ctx, tx, err)
 
 	// Get the user ID from the JWT token
-	claims := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
+	claims := ctx.Value(utils.ClaimsKey).(jwt.MapClaims)
 	jwtUserId := claims["sub"].(string)
 
 	// Get subscriptionId from path
-	subscriptionId := chi.URLParam(r, utils.SubscriptionIdKey)
+	subscriptionId := ctx.Param(utils.SubscriptionIdKey)
 
 	// Get the subscribeeId and subscriberId from the subscriptionId
 	queryString := "SELECT subscriber_id, subscribee_id FROM alpha_schema.subscriptions WHERE subscription_id = $1"
-	row := tx.QueryRow(transactionCtx, queryString, subscriptionId)
+	row := tx.QueryRow(ctx, queryString, subscriptionId)
 	var subscriberId, subscribeeId string
 	if err := row.Scan(&subscriberId, &subscribeeId); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			utils.WriteAndLogError(transactionCtx, w, schemas.SubscriptionNotFound, http.StatusNotFound,
+			utils.WriteAndLogError(ctx, schemas.SubscriptionNotFound, http.StatusNotFound,
 				errors.New("subscription not found"))
 			return
 		}
-		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
 	// Check and throw error if user wants to delete someone else's subscription
 	if subscriberId != jwtUserId {
-		utils.WriteAndLogError(transactionCtx, w, schemas.UnsubscribeForbidden, http.StatusForbidden,
+		utils.WriteAndLogError(ctx, schemas.UnsubscribeForbidden, http.StatusForbidden,
 			errors.New("you can only delete your own subscriptions"))
 		return
 	}
 
 	// Unsubscribe the user
 	queryString = "DELETE FROM alpha_schema.subscriptions WHERE subscription_id = $1"
-	if _, err := tx.Exec(transactionCtx, queryString, subscriptionId); err != nil {
+	if _, err := tx.Exec(ctx, queryString, subscriptionId); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			utils.WriteAndLogError(transactionCtx, w, schemas.SubscriptionNotFound, http.StatusNotFound,
+			utils.WriteAndLogError(ctx, schemas.SubscriptionNotFound, http.StatusNotFound,
 				errors.New("subscription not found"))
 			return
 		}
-		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
 	// Commit the transaction
-	if err := utils.CommitTransaction(w, tx, transactionCtx, cancel); err != nil {
+	if err := utils.CommitTransaction(ctx, tx); err != nil {
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	ctx.Status(http.StatusNoContent)
 }
