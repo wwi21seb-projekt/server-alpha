@@ -2,9 +2,9 @@
 package handlers
 
 import (
-	"context"
 	"errors"
 	"fmt"
+	"github.com/gin-gonic/gin"
 	"net/http"
 	"regexp"
 	"server-alpha/internal/managers"
@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -24,17 +23,16 @@ import (
 
 // PostHdl defines the interface for handling post-related HTTP requests.
 type PostHdl interface {
-	CreatePost(w http.ResponseWriter, r *http.Request)
-	DeletePost(w http.ResponseWriter, r *http.Request)
-	QueryPosts(w http.ResponseWriter, r *http.Request)
-	HandleGetFeedRequest(w http.ResponseWriter, r *http.Request)
+	CreatePost(c *gin.Context)
+	DeletePost(c *gin.Context)
+	QueryPosts(c *gin.Context)
+	HandleGetFeedRequest(c *gin.Context)
 }
 
 // PostHandler provides methods to handle post-related HTTP requests.
 type PostHandler struct {
 	DatabaseManager managers.DatabaseMgr
 	JWTManager      managers.JWTMgr
-	Validator       *utils.Validator
 }
 
 var hashtagRegex = regexp.MustCompile(`#\w+`)
@@ -45,37 +43,25 @@ func NewPostHandler(databaseManager *managers.DatabaseMgr, jwtManager *managers.
 	return &PostHandler{
 		DatabaseManager: *databaseManager,
 		JWTManager:      *jwtManager,
-		Validator:       utils.GetValidator(),
 	}
 }
 
 // CreatePost handles the creation of a new post. It begins a new transaction, validates the request payload,
 // extracts the user ID from JWT token, inserts the post data into the database, handles hashtags,
 // and commits the transaction.
-func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
+func (handler *PostHandler) CreatePost(ctx *gin.Context) {
 	// Begin a new transaction
-	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
-	if tx == nil || transactionCtx == nil {
-		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError,
-			errTransaction)
+	tx := utils.BeginTransaction(ctx, handler.DatabaseManager.GetPool())
+	if tx == nil {
+		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, errTransaction)
 		return
 	}
 	var err error
-	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel, err)
+	defer utils.RollbackTransaction(ctx, tx, err)
 
-	// Decode the request body into the registration request struct
-	createPostRequest := &schemas.CreatePostRequest{}
-	if err := utils.DecodeRequestBody(transactionCtx, w, r, createPostRequest); err != nil {
-		return
-	}
-
-	// Validate the registration request struct using the validator
-	if err := utils.ValidateStruct(transactionCtx, w, createPostRequest); err != nil {
-		return
-	}
-
-	// Get the user ID from the JWT token
-	claims := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
+	// Fetch JWT and Payload from context
+	createPostRequest := ctx.Value(utils.SanitizedPayloadKey).(*schemas.CreatePostRequest)
+	claims := ctx.Value(utils.ClaimsKey).(jwt.MapClaims)
 
 	// Create the post
 	userId := claims["sub"].(string)
@@ -101,9 +87,9 @@ func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 	queryString := fmt.Sprintf("INSERT INTO alpha_schema.posts (%s) VALUES(%s)", strings.Join(wantedValues, ","),
 		strings.Join(wantedPlaceholders, ","))
 
-	_, err = tx.Exec(transactionCtx, queryString, queryArgs...)
+	_, err = tx.Exec(ctx, queryString, queryArgs...)
 	if err != nil {
-		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -116,30 +102,30 @@ func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 		queryString := `INSERT INTO alpha_schema.hashtags (hashtag_id, content) VALUES($1, $2) 
 						ON CONFLICT (content) DO UPDATE SET content=alpha_schema.hashtags.content 
 						RETURNING hashtag_id`
-		if err := tx.QueryRow(transactionCtx, queryString, hashtagId, hashtag).Scan(&hashtagId); err != nil {
-			utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		if err := tx.QueryRow(ctx, queryString, hashtagId, hashtag).Scan(&hashtagId); err != nil {
+			utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
 			return
 		}
 
 		queryString = "INSERT INTO alpha_schema.many_posts_has_many_hashtags (post_id_posts, hashtag_id_hashtags) VALUES($1, $2)"
-		if _, err = tx.Exec(transactionCtx, queryString, postId, hashtagId); err != nil {
-			utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		if _, err = tx.Exec(ctx, queryString, postId, hashtagId); err != nil {
+			utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
 			return
 		}
 	}
 
 	// Get the author
 	queryString = "SELECT username, nickname FROM alpha_schema.users WHERE user_id = $1"
-	row := tx.QueryRow(transactionCtx, queryString, userId)
+	row := tx.QueryRow(ctx, queryString, userId)
 
 	author := &schemas.AuthorDTO{}
 	if err := row.Scan(&author.Username, &author.Nickname); err != nil {
-		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
 	// Commit the transaction
-	if err := utils.CommitTransaction(w, tx, transactionCtx, cancel); err != nil {
+	if err := utils.CommitTransaction(ctx, tx); err != nil {
 		return
 	}
 
@@ -160,55 +146,53 @@ func (handler *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Write the response
-	utils.WriteAndLogResponse(transactionCtx, w, post, http.StatusCreated)
+	utils.WriteAndLogResponse(ctx, post, http.StatusCreated)
 }
 
 // DeletePost handles the deletion of a post by ID. It verifies the user's authorization to delete the post,
 // deletes the post and its associated hashtags if they are no longer used, and commits the transaction.
-func (handler *PostHandler) DeletePost(w http.ResponseWriter, r *http.Request) {
+func (handler *PostHandler) DeletePost(ctx *gin.Context) {
 	// Begin a new transaction
-	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
-	if tx == nil || transactionCtx == nil {
-		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError,
-			errTransaction)
+	tx := utils.BeginTransaction(ctx, handler.DatabaseManager.GetPool())
+	if tx == nil {
+		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, errTransaction)
 		return
 	}
 	var err error
-	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel, err)
+	defer utils.RollbackTransaction(ctx, tx, err)
 
 	// Get the post ID from the URL
-	postId := chi.URLParam(r, utils.PostIdParamKey)
-
+	postId := ctx.Param(utils.PostIdParamKey)
 	// Get the user ID from the JWT token
-	claims := r.Context().Value(utils.ClaimsKey).(jwt.MapClaims)
+	claims := ctx.Value(utils.ClaimsKey).(jwt.MapClaims)
 
 	// Check if the user is the author of the post
 	queryString := "SELECT author_id, content FROM alpha_schema.posts WHERE post_id = $1"
-	row := tx.QueryRow(transactionCtx, queryString, postId)
+	row := tx.QueryRow(ctx, queryString, postId)
 
 	var authorId string
 	var content string
 	if err := row.Scan(&authorId, &content); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			utils.WriteAndLogError(transactionCtx, w, schemas.PostNotFound, http.StatusNotFound, err)
+			utils.WriteAndLogError(ctx, schemas.PostNotFound, http.StatusNotFound, err)
 			return
 		}
 
-		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
 	userId := claims["sub"].(string)
 	if userId != authorId {
-		utils.WriteAndLogError(transactionCtx, w, schemas.DeletePostForbidden, http.StatusForbidden,
+		utils.WriteAndLogError(ctx, schemas.DeletePostForbidden, http.StatusForbidden,
 			errors.New("user is not the author of the post"))
 		return
 	}
 
 	// Delete the post
 	queryString = "DELETE FROM alpha_schema.posts WHERE post_id = $1"
-	if _, err = tx.Exec(transactionCtx, queryString, postId); err != nil {
-		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
+	if _, err = tx.Exec(ctx, queryString, postId); err != nil {
+		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -221,37 +205,35 @@ func (handler *PostHandler) DeletePost(w http.ResponseWriter, r *http.Request) {
 					      (SELECT hashtag_id FROM alpha_schema.hashtags WHERE hashtags.content = $1))`
 
 	for _, hashtag := range hashtags {
-		if _, err = tx.Exec(transactionCtx, queryString, hashtag); err != nil {
-			utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
+		if _, err = tx.Exec(ctx, queryString, hashtag); err != nil {
+			utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
 			return
 		}
 	}
 
 	// Commit the transaction
-	if err := utils.CommitTransaction(w, tx, transactionCtx, cancel); err != nil {
+	if err := utils.CommitTransaction(ctx, tx); err != nil {
 		return
 	}
 
 	// Write the response
-	utils.WriteAndLogResponse(transactionCtx, w, nil, http.StatusNoContent)
+	utils.WriteAndLogResponse(ctx, nil, http.StatusNoContent)
 }
 
 // QueryPosts handles querying of posts based on the provided query parameters. It builds the database query dynamically,
 // retrieves the count and records of matching posts, and creates a paginated response.
-func (handler *PostHandler) QueryPosts(w http.ResponseWriter, r *http.Request) {
-	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
-	if tx == nil || transactionCtx == nil {
-		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError,
-			errTransaction)
+func (handler *PostHandler) QueryPosts(ctx *gin.Context) {
+	tx := utils.BeginTransaction(ctx, handler.DatabaseManager.GetPool())
+	if tx == nil {
+		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, errTransaction)
 		return
 	}
 	var err error
-	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel, err)
+	defer utils.RollbackTransaction(ctx, tx, err)
 
 	// Get the query parameters
-	queryParams := r.URL.Query()
-	q := queryParams.Get(utils.QueryParamKey)
-	limit, lastPostId := parseLimitAndPostId(queryParams.Get(utils.LimitParamKey), queryParams.Get(utils.PostIdParamKey))
+	q := ctx.Query(utils.QueryParamKey)
+	limit, lastPostId := parseLimitAndPostId(ctx.Query(utils.LimitParamKey), ctx.Query(utils.PostIdParamKey))
 
 	// Build query based on if we have a last post ID or not
 	dataQueryArgs := make([]interface{}, 0)
@@ -281,55 +263,55 @@ func (handler *PostHandler) QueryPosts(w http.ResponseWriter, r *http.Request) {
 		"posts.content, posts.created_at, posts.longitude, posts.latitude, posts.accuracy")
 
 	// Get count and posts
-	count, posts, customErr, statusCode, err := retrieveCountAndRecords(transactionCtx, tx, countQueryString,
-		countQueryArgs, dataQueryString, dataQueryArgs)
+	count, posts, customErr, statusCode, err := retrieveCountAndRecords(ctx, tx, countQueryString, countQueryArgs,
+		dataQueryString, dataQueryArgs)
 	if err != nil {
-		utils.WriteAndLogError(transactionCtx, w, customErr, statusCode, err)
+		utils.WriteAndLogError(ctx, customErr, statusCode, err)
 		return
 	}
 
 	// Create paginated response and send it
 	paginatedResponse := createPaginatedResponse(posts, lastPostId, limit, count)
 
-	if err := utils.CommitTransaction(w, tx, transactionCtx, cancel); err != nil {
-		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
+	if err := utils.CommitTransaction(ctx, tx); err != nil {
+		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
 	}
 
-	utils.WriteAndLogResponse(transactionCtx, w, paginatedResponse, http.StatusOK)
+	utils.WriteAndLogResponse(ctx, paginatedResponse, http.StatusOK)
 }
 
 // HandleGetFeedRequest handles requests to retrieve a feed. It determines the feed type (public or private),
 // retrieves the appropriate feed based on the user's subscriptions if needed, and creates a paginated response.
-func (handler *PostHandler) HandleGetFeedRequest(w http.ResponseWriter, r *http.Request) {
+func (handler *PostHandler) HandleGetFeedRequest(ctx *gin.Context) {
 	// Begin a new transaction
-	tx, transactionCtx, cancel := utils.BeginTransaction(w, r, handler.DatabaseManager.GetPool())
-	if tx == nil || transactionCtx == nil {
-		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError,
+	tx := utils.BeginTransaction(ctx, handler.DatabaseManager.GetPool())
+	if tx == nil {
+		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError,
 			errTransaction)
 		return
 	}
 	var err error
-	defer utils.RollbackTransaction(w, tx, transactionCtx, cancel, err)
+	defer utils.RollbackTransaction(ctx, tx, err)
 
 	// Determine the feed type
-	publicFeedWanted, claims, err := determineFeedType(r, w, handler)
+	publicFeedWanted, claims, err := determineFeedType(ctx, handler)
 	if err != nil {
 		return
 	}
 
 	// Retrieve the feed based on the wanted feed type
-	posts, records, lastPostId, limit, err := retrieveFeed(transactionCtx, tx, w, r, publicFeedWanted, claims)
+	posts, records, lastPostId, limit, err := retrieveFeed(ctx, tx, publicFeedWanted, claims)
 	if err != nil {
 		return
 	}
 
 	paginatedResponse := createPaginatedResponse(posts, lastPostId, limit, records)
 
-	if err := utils.CommitTransaction(w, tx, transactionCtx, cancel); err != nil {
-		utils.WriteAndLogError(transactionCtx, w, schemas.DatabaseError, http.StatusInternalServerError, err)
+	if err := utils.CommitTransaction(ctx, tx); err != nil {
+		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
 	}
 
-	utils.WriteAndLogResponse(transactionCtx, w, paginatedResponse, http.StatusOK)
+	utils.WriteAndLogResponse(ctx, paginatedResponse, http.StatusOK)
 }
 
 // CreatePaginatedResponse creates a paginated response for a list of posts based on the provided parameters.
@@ -355,9 +337,9 @@ func createPaginatedResponse(posts []*schemas.PostDTO, lastPostId, limit string,
 
 // DetermineFeedType determines the type of feed requested based on the presence and content of the JWT token
 // and the 'feedType' query parameter.
-func determineFeedType(r *http.Request, w http.ResponseWriter, handler *PostHandler) (bool, jwt.Claims, error) {
+func determineFeedType(c *gin.Context, handler *PostHandler) (bool, jwt.Claims, error) {
 	// Get UserId from JWT token
-	authHeader := r.Header.Get("Authorization")
+	authHeader := c.GetHeader("Authorization")
 	var claims jwt.Claims
 	var err error
 	publicFeedWanted := false
@@ -367,18 +349,18 @@ func determineFeedType(r *http.Request, w http.ResponseWriter, handler *PostHand
 	} else {
 		if !strings.HasPrefix(authHeader, "Bearer ") || len(authHeader) <= len("Bearer ") {
 			err = errors.New("invalid authorization header")
-			utils.WriteAndLogError(r.Context(), w, schemas.InvalidToken, http.StatusBadRequest, err)
+			utils.WriteAndLogError(c, schemas.InvalidToken, http.StatusBadRequest, err)
 			return false, nil, err
 		}
 
 		jwtToken := authHeader[len("Bearer "):]
 		claims, err = handler.JWTManager.ValidateJWT(jwtToken)
 		if err != nil {
-			utils.WriteAndLogError(r.Context(), w, schemas.Unauthorized, http.StatusUnauthorized, err)
+			utils.WriteAndLogError(c, schemas.Unauthorized, http.StatusUnauthorized, err)
 			return false, nil, err
 		}
 
-		feedType := r.URL.Query().Get(utils.FeedTypeParamKey)
+		feedType := c.Query(utils.FeedTypeParamKey)
 		if feedType == "global" {
 			publicFeedWanted = true
 		}
@@ -390,10 +372,9 @@ func determineFeedType(r *http.Request, w http.ResponseWriter, handler *PostHand
 // RetrieveFeed retrieves the appropriate feed based on whether a public or private feed is requested.
 // It builds the database query dynamically based on the feed type and user input, retrieves the posts,
 // and returns the posts along with pagination details.
-func retrieveFeed(ctx context.Context, tx pgx.Tx, w http.ResponseWriter, r *http.Request, publicFeedWanted bool,
+func retrieveFeed(ctx *gin.Context, tx pgx.Tx, publicFeedWanted bool,
 	claims jwt.Claims) ([]*schemas.PostDTO, int, string, string, error) {
-	queryParams := r.URL.Query()
-	limit, lastPostId := parseLimitAndPostId(queryParams.Get(utils.LimitParamKey), queryParams.Get(utils.PostIdParamKey))
+	limit, lastPostId := parseLimitAndPostId(ctx.Query(utils.LimitParamKey), ctx.Query(utils.PostIdParamKey))
 
 	currentDataQueryIndex := 1
 	currentCountQueryIndex := 1
@@ -444,7 +425,7 @@ func retrieveFeed(ctx context.Context, tx pgx.Tx, w http.ResponseWriter, r *http
 
 	count, posts, customErr, statusCode, err := retrieveCountAndRecords(ctx, tx, countQuery, countQueryArgs, dataQuery, dataQueryArgs)
 	if err != nil {
-		utils.WriteAndLogError(ctx, w, customErr, statusCode, err)
+		utils.WriteAndLogError(ctx, customErr, statusCode, err)
 		return nil, 0, "", "", err
 	}
 
@@ -453,7 +434,7 @@ func retrieveFeed(ctx context.Context, tx pgx.Tx, w http.ResponseWriter, r *http
 
 // RetrieveCountAndRecords retrieves the count of posts that match the criteria and the corresponding post records.
 // It executes the provided count and data queries, processes the results, and returns the post count along with the post DTOs.
-func retrieveCountAndRecords(ctx context.Context, tx pgx.Tx, countQuery string, countQueryArgs []interface{},
+func retrieveCountAndRecords(ctx *gin.Context, tx pgx.Tx, countQuery string, countQueryArgs []interface{},
 	dataQuery string, dataQueryArgs []interface{}) (int, []*schemas.PostDTO, *schemas.CustomError, int, error) {
 	// Get the count of posts in the database that match the criteria
 	row := tx.QueryRow(ctx, countQuery, countQueryArgs...)

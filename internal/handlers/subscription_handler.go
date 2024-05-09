@@ -1,9 +1,9 @@
 package handlers
 
 import (
-	"context"
 	"errors"
 	"fmt"
+	"github.com/gin-gonic/gin"
 	"net/http"
 	"server-alpha/internal/managers"
 	"server-alpha/internal/schemas"
@@ -39,21 +39,12 @@ func NewSubscriptionHandler(databaseManager *managers.DatabaseMgr) SubscriptionH
 
 // HandleGetSubscriptions handles retrieving subscriptions of a user and sending a paginated response.
 // It extracts the username from the URL, fetches subscriptions based on the subscription type, and sends the response.
-func (handler *SubscriptionHandler) HandleGetSubscriptions(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithDeadline(r.Context(), time.Now().Add(10*time.Second))
-	defer func() {
-		if err := ctx.Err(); err != nil {
-			log.Debug("Context error: ", err)
-		}
-		cancel()
-		log.Debug("Context canceled")
-	}()
-
+func (handler *SubscriptionHandler) HandleGetSubscriptions(ctx *gin.Context) {
 	// Get the username from the path variable
-	username := chi.URLParam(r, utils.UsernameKey)
+	username := ctx.Param(utils.UsernameKey)
 
 	// Get pagination parameters
-	offset, limit, err := utils.ParsePaginationParams(r)
+	offset, limit, err := utils.ParsePaginationParams(ctx)
 	if err != nil {
 		utils.WriteAndLogError(ctx, w, schemas.BadRequest, http.StatusBadRequest, err)
 		return

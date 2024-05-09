@@ -56,7 +56,7 @@ func sanitizeData(policy *bluemonday.Policy, data interface{}) {
 		}
 		// Handle nested structs recursively
 		if field.Kind() == reflect.Struct {
-			sanitizeData(field.Addr().Interface())
+			sanitizeData(policy, field.Addr().Interface())
 		}
 	}
 }
