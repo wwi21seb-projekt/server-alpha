@@ -150,19 +150,6 @@ func userRouter(databaseMgr *managers.DatabaseMgr, jwtMgr managers.JWTMgr, mailM
 	}
 }
 
-// traceIdMiddleware is a middleware function that generates a new trace ID for each request.
-// It injects this trace ID into the request context and sets it as a header for downstream use.
-func traceIdMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		traceId := utils.GenerateTraceId()
-		ctx := r.Context()
-		ctx = context.WithValue(ctx, utils.TraceIdKey, traceId)
-		r = r.WithContext(ctx)
-		r.Header.Set("X-Trace-Id", traceId)
-		next.ServeHTTP(w, r)
-	})
-}
-
 // logRequestEntryMiddleware is a middleware function that logs the details of incoming requests.
 // It logs the method, URL, and trace ID of each request for debugging and tracking purposes.
 func logRequestEntryMiddleware(next http.Handler) http.Handler {

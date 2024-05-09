@@ -3,6 +3,7 @@ package routing
 import (
 	"net/http"
 	"os"
+	"server-alpha/internal/handlers"
 	"server-alpha/internal/managers"
 	"server-alpha/internal/middleware"
 	"server-alpha/internal/schemas"
@@ -49,7 +50,9 @@ func setupCommonMiddleware(router *gin.Engine) {
 		ExposeHeaders: []string{"Content-Length", "Content-Type", "X-Correlation-ID"},
 		MaxAge:        12 * time.Hour,
 	}))
-	router.Use
+	router.Use(func (c *gin.Context) {
+		c.Header("Content-Type", "application/json")
+	})
 }
 
 func setupRoutes(router *gin.Engine, databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtMgr managers.JWTMgr) {
@@ -88,29 +91,35 @@ func setupRoutes(router *gin.Engine, databaseMgr managers.DatabaseMgr, mailMgr m
 	apiRouter := router.Group("/api")
 	{
 		// Set up imprint route
-		api.GET("/imprint", func(c *gin.Context) {
+		apiRouter.GET("/imprint", func(c *gin.Context) {
 			c.JSON(http.StatusOK, imprintDto)
 		})
 
 		// Set up user routes
-		users := api.Group("/users")
-		userRoutes(users, databaseMgr, mailMgr, jwtMgr)
-
-		// Set up feed routes
-		feed := api.Group("/feed")
-		feedRoutes(feed, databaseMgr, jwtMgr)
+		userRouter := apiRouter.Group("/users")
+		userHdl := handlers.NewUserHandler(databaseMgr, jwtMgr, mailMgr)
+		userRoutes(userRouter, userHdl)
 
 		// Set up post routes
-		posts := api.Group("/posts")
-		posts.Use(jwtMgr.JWTMiddleware())
-		postRoutes(posts, databaseMgr, jwtMgr)
+		postRouter := apiRouter.Group("/posts", jwtMgr.JWTMiddleware())
+		postHdl := handlers.NewPostHandler(&databaseMgr, &jwtMgr)
+		postRoutes(postRouter, postHdl)
+		apiRouter.GET("/feed", postHdl.HandleGetFeedRequest)
 
 		// Set up subscription routes
-		subscriptions := api.Group("/subscriptions")
-		subscriptionRoutes(api, subscriptions, databaseMgr, jwtMgr)
+		subscriptionsRouter := apiRouter.Group("/subscriptions")
+		subscriptionHdl := handlers.NewSubscriptionHandler(&databaseMgr)
+		subscriptionsRoutes(subscriptionsRouter, subscriptionHdl)
+	}
 	}
 
-	func userRoutes(apiRouter *gin.RouterGroup, databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtMgr managers.JWTMgr) {
+	func userRoutes(apiRouter *gin.RouterGroup, userHdl handlers.UserHdl) {
+		apiRouter.POST("/register", userHdl.RegisterUser())
+	}
 
+	func postRoutes(apiRouter *gin.RouterGroup, postHdl handlers.PostHdl) {
+		apiRouter.POST("/", middleware.ValidateAndSanitizeStruct(schemas.CreatePostRequest{}), postHdl.CreatePost)
+		apiRouter.GET("/", postHdl.QueryPosts)
+		apiRouter.DELETE("/:postId", postHdl.DeletePost)
 	}
 }

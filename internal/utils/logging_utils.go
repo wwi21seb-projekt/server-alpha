@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"context"
 	"os"
 
 	"github.com/gin-gonic/gin"
@@ -76,7 +75,7 @@ func LogMessage(level, message string) {
 	logEntry(entry, level, message)
 }
 
-func LogMessageWithFields(ctx context.Context, level, message string) {
+func LogMessageWithFields(ctx *gin.Context, level, message string) {
 	traceId := ctx.Value(TraceIdKey).(string)
 	service := extractServiceName()
 
@@ -88,7 +87,7 @@ func LogMessageWithFields(ctx context.Context, level, message string) {
 	logEntry(entry, level, message)
 }
 
-func LogMessageWithFieldsAndError(ctx context.Context, level, message string, err error) {
+func LogMessageWithFieldsAndError(ctx *gin.Context, level, message string, err error) {
 	traceId := ctx.Value(TraceIdKey).(string)
 	service := extractServiceName()
 	message = message + ": " + err.Error()
