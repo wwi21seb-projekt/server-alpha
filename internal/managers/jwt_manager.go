@@ -2,7 +2,6 @@
 package managers
 
 import (
-	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/x509"
@@ -15,6 +14,7 @@ import (
 	"server-alpha/internal/utils"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	log "github.com/sirupsen/logrus"
 )
@@ -24,7 +24,7 @@ import (
 type JWTMgr interface {
 	GenerateJWT(userId, username string, isRefreshToken bool) (string, error)
 	ValidateJWT(tokenString string) (jwt.Claims, error)
-	JWTMiddleware(next http.Handler) http.Handler
+	JWTMiddleware() gin.HandlerFunc
 }
 
 // JWTManager is a concrete implementation of the JWTMgr interface.
@@ -83,35 +83,28 @@ func (jm *JWTManager) ValidateJWT(tokenString string) (jwt.Claims, error) {
 
 // JWTMiddleware is an HTTP middleware that validates JWTs from the 'Authorization' header of incoming requests.
 // It ensures that the JWT is valid and adds the claims to the request context for use in subsequent handlers.
-func (jm *JWTManager) JWTMiddleware(next http.Handler) http.Handler {
-	fn := func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-
-		// Check if the request has a JWT token
-		if r.Header.Get("Authorization") == "" {
-			utils.WriteAndLogError(ctx, w, schemas.Unauthorized, http.StatusUnauthorized, fmt.Errorf("missing authorization header"))
+func (jm *JWTManager) JWTMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			c.JSON(http.StatusUnauthorized, schemas.Unauthorized)
+			c.Next()
 			return
 		}
 
-		// Extract the JWT token from the request header
-		header := r.Header.Get("Authorization")
-		token := header[len("Bearer "):]
-
 		// Validate the JWT token
+		token := authHeader[len("Bearer "):]
 		claims, err := jm.ValidateJWT(token)
 		if err != nil || claims.(jwt.MapClaims)["refresh"] == "true" {
-			utils.WriteAndLogError(ctx, w, schemas.Unauthorized, http.StatusUnauthorized, err)
+			c.JSON(http.StatusUnauthorized, schemas.Unauthorized)
+			c.Next()
 			return
 		}
 
 		// Add the claims to the request context
-		ctx = context.WithValue(ctx, utils.ClaimsKey, claims)
-		r = r.WithContext(ctx)
-
-		next.ServeHTTP(w, r)
+		c.Set(utils.ClaimsKey.String(), claims)
+		c.Next()
 	}
-
-	return http.HandlerFunc(fn)
 }
 
 // NewJWTManagerFromFile creates a new JWTManager by loading EdDSA keys from specified files.
