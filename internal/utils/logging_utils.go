@@ -36,7 +36,7 @@ func GenerateTraceId() string {
 	return uuid.New().String()
 }
 
-func logEntry(entry *log.Entry, level, message string) {
+func LogEntry(entry *log.Entry, level, message string) {
 	switch level {
 	case "debug":
 		entry.Debug(message)
@@ -55,7 +55,7 @@ func logEntry(entry *log.Entry, level, message string) {
 	}
 }
 
-func extractServiceName() string {
+func ExtractServiceName() string {
 	service := "PR-" + os.Getenv("PR_NUMBER")
 
 	if service == "PR-" {
@@ -66,30 +66,30 @@ func extractServiceName() string {
 }
 
 func LogMessage(level, message string) {
-	service := extractServiceName()
+	service := ExtractServiceName()
 
 	entry := log.WithFields(log.Fields{
 		"service": service,
 	})
 
-	logEntry(entry, level, message)
+	LogEntry(entry, level, message)
 }
 
 func LogMessageWithFields(ctx *gin.Context, level, message string) {
-	traceId := ctx.Value(TraceIdKey).(string)
-	service := extractServiceName()
+	traceId := ctx.Value(TraceIdKey.String()).(string)
+	service := ExtractServiceName()
 
 	entry := log.WithFields(log.Fields{
 		"traceId": traceId,
 		"service": service,
 	})
 
-	logEntry(entry, level, message)
+	LogEntry(entry, level, message)
 }
 
 func LogMessageWithFieldsAndError(ctx *gin.Context, level, message string, err error) {
-	traceId := ctx.Value(TraceIdKey).(string)
-	service := extractServiceName()
+	traceId := ctx.Value(TraceIdKey.String()).(string)
+	service := ExtractServiceName()
 	message = message + ": " + err.Error()
 
 	entry := log.WithFields(log.Fields{
@@ -97,18 +97,5 @@ func LogMessageWithFieldsAndError(ctx *gin.Context, level, message string, err e
 		"service": service,
 	})
 
-	logEntry(entry, level, message)
-}
-
-func LogRequest(ctx *gin.Context) {
-	traceId := ctx.Value(TraceIdKey).(string)
-	service := extractServiceName()
-	message := "Request received: " + ctx.Request.Method + " " + ctx.Request.URL.Path
-
-	entry := log.WithFields(log.Fields{
-		"traceId": traceId,
-		"service": service,
-	})
-
-	logEntry(entry, "info", message)
+	LogEntry(entry, level, message)
 }

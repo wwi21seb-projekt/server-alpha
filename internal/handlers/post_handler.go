@@ -60,8 +60,8 @@ func (handler *PostHandler) CreatePost(ctx *gin.Context) {
 	defer utils.RollbackTransaction(ctx, tx, err)
 
 	// Fetch JWT and Payload from context
-	createPostRequest := ctx.Value(utils.SanitizedPayloadKey).(*schemas.CreatePostRequest)
-	claims := ctx.Value(utils.ClaimsKey).(jwt.MapClaims)
+	createPostRequest := ctx.Value(utils.SanitizedPayloadKey.String()).(*schemas.CreatePostRequest)
+	claims := ctx.Value(utils.ClaimsKey.String()).(jwt.MapClaims)
 
 	// Create the post
 	userId := claims["sub"].(string)
@@ -164,7 +164,7 @@ func (handler *PostHandler) DeletePost(ctx *gin.Context) {
 	// Get the post ID from the URL
 	postId := ctx.Param(utils.PostIdParamKey)
 	// Get the user ID from the JWT token
-	claims := ctx.Value(utils.ClaimsKey).(jwt.MapClaims)
+	claims := ctx.Value(utils.ClaimsKey.String()).(jwt.MapClaims)
 
 	// Check if the user is the author of the post
 	queryString := "SELECT author_id, content FROM alpha_schema.posts WHERE post_id = $1"
