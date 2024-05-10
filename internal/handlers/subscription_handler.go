@@ -86,7 +86,7 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(ctx *gin.Context) {
 		"(SELECT user_id FROM alpha_schema.users WHERE username = $1)", userTypes[1])
 
 	// Get user id from jwt token
-	claims := ctx.Value(utils.ClaimsKey).(jwt.MapClaims)
+	claims := ctx.Value(utils.ClaimsKey.String()).(jwt.MapClaims)
 	jwtUserId := claims["sub"].(string)
 
 	rows, err = handler.DatabaseManager.GetPool().Query(ctx, subscriptionQuery, jwtUserId, username)
@@ -142,7 +142,7 @@ func (handler *SubscriptionHandler) Subscribe(ctx *gin.Context) {
 	defer utils.RollbackTransaction(ctx, tx, err)
 
 	// Decode the request body into the subscription request struct
-	subscriptionRequest := ctx.Value(utils.SanitizedPayloadKey).(schemas.SubscriptionRequest)
+	subscriptionRequest := ctx.Value(utils.SanitizedPayloadKey.String()).(schemas.SubscriptionRequest)
 
 	// Get subscribeeId from request body
 	queryString := "SELECT user_id FROM alpha_schema.users WHERE username = $1"
@@ -159,7 +159,7 @@ func (handler *SubscriptionHandler) Subscribe(ctx *gin.Context) {
 	}
 
 	// Get the user ID from the JWT token
-	claims := ctx.Value(utils.ClaimsKey).(jwt.MapClaims)
+	claims := ctx.Value(utils.ClaimsKey.String()).(jwt.MapClaims)
 	jwtUserId := claims["sub"].(string)
 	jwtUsername := claims["username"].(string)
 
@@ -228,7 +228,7 @@ func (handler *SubscriptionHandler) Unsubscribe(ctx *gin.Context) {
 	defer utils.RollbackTransaction(ctx, tx, err)
 
 	// Get the user ID from the JWT token
-	claims := ctx.Value(utils.ClaimsKey).(jwt.MapClaims)
+	claims := ctx.Value(utils.ClaimsKey.String()).(jwt.MapClaims)
 	jwtUserId := claims["sub"].(string)
 
 	// Get subscriptionId from path

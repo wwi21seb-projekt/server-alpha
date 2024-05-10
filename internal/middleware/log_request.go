@@ -1,11 +1,21 @@
 package middleware
 
-import "github.com/gin-gonic/gin"
+import (
+	"github.com/gin-gonic/gin"
+	log "github.com/sirupsen/logrus"
+	"server-alpha/internal/utils"
+)
 
 func LogRequest() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		// Log the request
-		log.Infof("Received %s request to %s", c.Request.Method, c.Request.URL.Path)
-		c.Next()
+	return func(ctx *gin.Context) {
+		traceId := ctx.Value(utils.TraceIdKey.String()).(string)
+		service := utils.ExtractServiceName()
+		message := "Request received: " + ctx.Request.Method + " " + ctx.Request.URL.Path
+		entry := log.WithFields(log.Fields{
+			"traceId": traceId,
+			"service": service,
+		})
+		utils.LogEntry(entry, "info", message)
+		ctx.Next()
 	}
 }

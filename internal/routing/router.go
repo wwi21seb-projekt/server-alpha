@@ -1,69 +1,65 @@
-// Package routing sets up the HTTP routing for the server.
 package routing
 
 import (
-	"context"
 	"net/http"
 	"os"
 	"server-alpha/internal/handlers"
 	"server-alpha/internal/managers"
+	"server-alpha/internal/middleware"
 	"server-alpha/internal/schemas"
 	"server-alpha/internal/utils"
 	"time"
 
-	"github.com/go-chi/cors"
-
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
+	"github.com/gin-contrib/cors"
+	"github.com/gin-gonic/gin"
 )
 
-var imprint = "Impressum\n\nEinen Löwen interessiert es nicht, was Schafe über ihn denken.\n\nDiese Webseite " +
-	"wird im Rahmen eines Universitätsprojektes angeboten von:\nKurs WWI21SEB\nDuale Hochschule " +
-	"Baden-Württemberg Mannheim\nCoblitzallee 1 – 9, 68163 Mannheim\n\nKontakt:\nE-Mail: " +
-	"team@mail.server-alpha.tech\n\nHaftungsausschluss:\nDer Kurs WWI21SEB und die DHBW Mannheim übernehmen " +
-	"keine Haftung für die Inhalte externer Links. Für den Inhalt der verlinkten Seiten sind ausschließlich " +
-	"deren Betreiber verantwortlich.\n\nDatenschutzbeauftragter der Hochschule:\nProf. Dr. Tobias Straub\n" +
-	"Friedrichstraße 14\n70174 Stuttgart\nE-Mail: straub@dhbw.de\n\nDie Nutzung von auf dieser Website " +
-	"veröffentlichten Kontaktdaten durch Dritte zur Übersendung von nicht ausdrücklich angeforderter Werbung " +
-	"und Informationsmaterialien wird hiermit ausdrücklich untersagt. Die Betreiber der Seiten behalten sich " +
-	"ausdrücklich rechtliche Schritte im Falle der unverlangten Zusendung von Werbeinformationen, etwa durch " +
-	"Spam-Mails, vor.\n\nDiese Webseite wurde im Rahmen eines Universitätsprojekts erstellt und dient " +
-	"ausschließlich zu nicht-kommerziellen Zwecken."
+var imprintDto = schemas.ImprintDTO{
+	Text: "Impressum\n\nEinen Löwen interessiert es nicht, was Schafe über ihn denken.\n\nDiese Webseite " +
+		"wird im Rahmen eines Universitätsprojektes angeboten von:\nKurs WWI21SEB\nDuale Hochschule " +
+		"Baden-Württemberg Mannheim\nCoblitzallee 1 – 9, 68163 Mannheim\n\nKontakt:\nE-Mail: " +
+		"team@mail.server-alpha.tech\n\nHaftungsausschluss:\nDer Kurs WWI21SEB und die DHBW Mannheim übernehmen " +
+		"keine Haftung für die Inhalte externer Links. Für den Inhalt der verlinkten Seiten sind ausschließlich " +
+		"deren Betreiber verantwortlich.\n\nDatenschutzbeauftragter der Hochschule:\nProf. Dr. Tobias Straub\n" +
+		"Friedrichstraße 14\n70174 Stuttgart\nE-Mail: straub@dhbw.de\n\nDie Nutzung von auf dieser Website " +
+		"veröffentlichten Kontaktdaten durch Dritte zur Übersendung von nicht ausdrücklich angeforderter Werbung " +
+		"und Informationsmaterialien wird hiermit ausdrücklich untersagt. Die Betreiber der Seiten behalten sich " +
+		"ausdrücklich rechtliche Schritte im Falle der unverlangten Zusendung von Werbeinformationen, etwa durch " +
+		"Spam-Mails, vor.\n\nDiese Webseite wurde im Rahmen eines Universitätsprojekts erstellt und dient " +
+		"ausschließlich zu nicht-kommerziellen Zwecken.",
+}
 
-// InitRouter sets up the routing rules, middleware, and handlers for different routes.
-// It also configures CORS, injects trace IDs into requests, sets up logging, error recovery,
-// and request timeouts, and initializes various route handlers.
-func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtMgr managers.JWTMgr) *chi.Mux {
-	r := chi.NewRouter()
+func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtMgr managers.JWTMgr) *gin.Engine {
+	// Initialize router with logging and recovery middleware
+	router := gin.New()
+	// Initialize middleware
+	setupCommonMiddleware(router)
+	// Setup routes
+	setupRoutes(router, databaseMgr, mailMgr, jwtMgr)
 
-	// Configure CORS
-	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins: []string{"http://localhost:5173", "http://localhost:19000"},
-		AllowedMethods: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders: []string{"Accept", "Authorization", "Content-Type"},
-		MaxAge:         300,
+	return router
+}
+
+func setupCommonMiddleware(router *gin.Engine) {
+	router.Use(gin.Logger())
+	router.Use(gin.Recovery())
+	router.Use(middleware.InjectTrace())
+	router.Use(cors.New(cors.Config{
+		AllowOrigins:  []string{"http://localhost:5173", "http://localhost:19000"},
+		AllowMethods:  []string{"GET", "PATCH", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:  []string{"Accept, Authorization", "Content-Type"},
+		ExposeHeaders: []string{"Content-Length", "Content-Type", "X-Correlation-ID"},
+		MaxAge:        12 * time.Hour,
 	}))
-	// Inject trace ID into request context
-	r.Use(traceIdMiddleware)
-	// Add logger to middleware stack
-	r.Use(middleware.Logger)
-	// Add recoverer to middleware stack
-	r.Use(middleware.Recoverer)
-	// Add basic entry log to middleware stack
-	r.Use(logRequestEntryMiddleware)
-	// Set base timeout for all requests to 15 seconds
-	r.Use(middleware.Timeout(15 * time.Second))
-	// Set content type to JSON
-	r.Use(middleware.SetHeader("Content-Type", "application/json"))
+	router.Use(func(c *gin.Context) {
+		c.Header("Content-Type", "application/json")
+	})
+	router.Use(middleware.LogRequest())
+}
 
-	// Initialize handlers
-	postHdl := handlers.NewPostHandler(&databaseMgr, &jwtMgr)
-
-	// Initialize subscription handlers
-	subscriptionHdl := handlers.NewSubscriptionHandler(&databaseMgr)
-
-	// Initialize metadata route
-	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+func setupRoutes(router *gin.Engine, databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtMgr managers.JWTMgr) {
+	// Set up version route
+	router.GET("/", func(c *gin.Context) {
 		apiVersion := os.Getenv("PR_NUMBER")
 		var pullRequest string
 
@@ -73,88 +69,78 @@ func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtM
 			pullRequest = "https://github.com/wwi21seb-projekt/server-alpha/pull/" + apiVersion
 			apiVersion = "PR-" + apiVersion
 		}
-
 		metadata := &schemas.MetadataDTO{
 			ApiVersion:  apiVersion,
 			ApiName:     "Server Alpha",
 			PullRequest: pullRequest,
 		}
-
-		utils.WriteAndLogResponse(r.Context(), w, metadata, http.StatusOK)
+		utils.WriteAndLogResponse(c, metadata, http.StatusOK)
 	})
 
-	// Initialize health check route
-	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+	// Set up health route
+	router.GET("/health", func(c *gin.Context) {
 		// Ping the database
-		conn, err := databaseMgr.GetPool().Acquire(r.Context())
+		conn, err := databaseMgr.GetPool().Acquire(c)
+		defer conn.Release()
 		if err != nil {
-			http.Error(w, "Database not responding", http.StatusInternalServerError)
+			c.String(http.StatusInternalServerError, "Database not responding")
 			return
 		}
-		defer conn.Release()
-		w.WriteHeader(http.StatusOK)
+		c.Status(http.StatusOK)
 	})
 
-	r.Get("/api/imprint", func(w http.ResponseWriter, r *http.Request) {
-		imprintDto := &schemas.ImprintDTO{
-			Text: imprint,
-		}
+	// Set up API routes
+	apiRouter := router.Group("/api")
+	{
+		// Set up imprint route
+		apiRouter.GET("/imprint", func(c *gin.Context) {
+			utils.WriteAndLogResponse(c, imprintDto, http.StatusOK)
+		})
 
-		utils.WriteAndLogResponse(r.Context(), w, imprintDto, http.StatusOK)
-	})
+		// Set up user routes
+		userRouter := apiRouter.Group("/users")
+		userHdl := handlers.NewUserHandler(&databaseMgr, &jwtMgr, &mailMgr)
+		userRoutes(userRouter, userHdl, jwtMgr)
 
-	// Initialize user routes
-	r.Route("/api/users", userRouter(&databaseMgr, jwtMgr, &mailMgr))
+		// Set up post routes
+		postRouter := apiRouter.Group("/posts", jwtMgr.JWTMiddleware())
+		postHdl := handlers.NewPostHandler(&databaseMgr, &jwtMgr)
+		// It's important to define the feed route prior to the post routes, because
+		// we don't want the JWT middleware in this unauthorized request
+		apiRouter.GET("/feed", postHdl.HandleGetFeedRequest)
+		postRoutes(postRouter, postHdl, jwtMgr)
 
-	// Initialize feed routes
-	r.Route("/api/feed", func(r chi.Router) {
-		r.Get("/", postHdl.HandleGetFeedRequest)
-	})
-
-	// Initialize post routes
-	r.Route("/api/posts", func(r chi.Router) {
-		r.Use(jwtMgr.JWTMiddleware)
-		r.Post("/", postHdl.CreatePost)
-		r.Get("/", postHdl.QueryPosts)
-		r.Delete("/{postId}", postHdl.DeletePost)
-	})
-
-	// Intialize subscription routes
-	r.Route("/api/subscriptions", func(r chi.Router) {
-		r.Use(jwtMgr.JWTMiddleware)
-		r.Post("/", subscriptionHdl.Subscribe)
-		r.Delete("/{subscriptionId}", subscriptionHdl.Unsubscribe)
-		r.Get("/{username}", subscriptionHdl.HandleGetSubscriptions)
-	})
-
-	return r
-}
-
-// userRouter sets up the routing rules specifically for user-related endpoints.
-// It initializes user handlers and sets up routes for registering, logging in,
-// changing user information, refreshing tokens, and managing user activation.
-func userRouter(databaseMgr *managers.DatabaseMgr, jwtMgr managers.JWTMgr, mailMgr *managers.MailMgr) func(chi.Router) {
-	return func(r chi.Router) {
-		userHdl := handlers.NewUserHandler(databaseMgr, &jwtMgr, mailMgr)
-
-		r.Post("/", userHdl.RegisterUser)
-		r.With(jwtMgr.JWTMiddleware).Get("/", userHdl.SearchUsers)
-		r.With(jwtMgr.JWTMiddleware).Put("/", userHdl.ChangeTrivialInformation)
-		r.With(jwtMgr.JWTMiddleware).Patch("/", userHdl.ChangePassword)
-		r.Post("/login", userHdl.LoginUser)
-		r.Post("/refresh", userHdl.RefreshToken)
-		r.Post("/{username}/activate", userHdl.ActivateUser)
-		r.Delete("/{username}/activate", userHdl.ResendToken)
-		r.With(jwtMgr.JWTMiddleware).Get("/{username}", userHdl.HandleGetUserRequest)
-		r.Get("/{username}/feed", userHdl.RetrieveUserPosts)
+		// Set up subscription routes
+		subscriptionsRouter := apiRouter.Group("/subscriptions", jwtMgr.JWTMiddleware())
+		subscriptionHdl := handlers.NewSubscriptionHandler(&databaseMgr)
+		subscriptionsRoutes(subscriptionsRouter, subscriptionHdl)
 	}
 }
 
-// logRequestEntryMiddleware is a middleware function that logs the details of incoming requests.
-// It logs the method, URL, and trace ID of each request for debugging and tracking purposes.
-func logRequestEntryMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		utils.LogRequest(r.Context(), r)
-		next.ServeHTTP(w, r)
-	})
+func userRoutes(userRouter *gin.RouterGroup, userHdl handlers.UserHdl, jwtMgr managers.JWTMgr) {
+	userRouter.POST("/register", middleware.ValidateAndSanitizeStruct(schemas.RegistrationRequest{}), userHdl.RegisterUser)
+	userRouter.POST("/login", middleware.ValidateAndSanitizeStruct(schemas.LoginRequest{}), userHdl.LoginUser)
+	userRouter.POST("/refresh", middleware.ValidateAndSanitizeStruct(schemas.RefreshTokenRequest{}), userHdl.RefreshToken)
+	userRouter.POST("/:username/activate", middleware.ValidateAndSanitizeStruct(schemas.ActivationRequest{}), userHdl.ActivateUser)
+	userRouter.DELETE("/:username/activate", userHdl.ResendToken)
+	userRouter.GET("/:username/feed", userHdl.RetrieveUserPosts)
+	// The following routes require the user to be authenticated
+	userRouter.Use(jwtMgr.JWTMiddleware())
+	userRouter.GET("/:username", userHdl.HandleGetUserRequest)
+	userRouter.GET("/", userHdl.SearchUsers)
+	userRouter.PATCH("/", middleware.ValidateAndSanitizeStruct(schemas.ChangePasswordRequest{}), userHdl.ChangePassword)
+	userRouter.PUT("/", middleware.ValidateAndSanitizeStruct(schemas.ChangeTrivialInformationRequest{}), userHdl.ChangeTrivialInformation)
+}
+
+func postRoutes(postRouter *gin.RouterGroup, postHdl handlers.PostHdl, jwtMgr managers.JWTMgr) {
+	postRouter.Use(jwtMgr.JWTMiddleware())
+	postRouter.POST("/", middleware.ValidateAndSanitizeStruct(schemas.CreatePostRequest{}), postHdl.CreatePost)
+	postRouter.GET("/", postHdl.QueryPosts)
+	postRouter.DELETE("/:postId", postHdl.DeletePost)
+}
+
+func subscriptionsRoutes(subscriptionsRouter *gin.RouterGroup, subscriptionHdl handlers.SubscriptionHdl) {
+	subscriptionsRouter.POST("/", middleware.ValidateAndSanitizeStruct(schemas.SubscriptionRequest{}), subscriptionHdl.Subscribe)
+	subscriptionsRouter.DELETE("/:subscriptionId", subscriptionHdl.Unsubscribe)
+	subscriptionsRouter.GET("/:username", subscriptionHdl.HandleGetSubscriptions)
 }
