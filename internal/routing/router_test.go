@@ -131,14 +131,13 @@ func TestUserRegistration(t *testing.T) {
 
 			poolMock := databaseMgrMock.GetPool().(pgxmock.PgxPoolIface)
 
-			// Mock database calls
-			poolMock.ExpectBegin()
-
 			switch tc.name {
 			case "InvalidEmail":
 			case "DuplicateUsername":
+				poolMock.ExpectBegin()
 				poolMock.ExpectQuery("SELECT").WithArgs(tc.user.Username, tc.user.Email).WillReturnRows(pgxmock.NewRows([]string{"username", "email"}).AddRow(tc.user.Username, tc.user.Email))
 			default:
+				poolMock.ExpectBegin()
 				poolMock.ExpectQuery("SELECT").WithArgs(tc.user.Username, tc.user.Email).WillReturnRows(pgxmock.NewRows([]string{"username", "email"}))
 				poolMock.ExpectExec("INSERT").WithArgs(pgxmock.AnyArg(), tc.user.Username, tc.user.Nickname, tc.user.Email, pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), "", "").WillReturnResult(pgxmock.NewResult("INSERT", 1))
 				poolMock.ExpectExec("DELETE").WithArgs(pgxmock.AnyArg()).WillReturnResult(pgxmock.NewResult("DELETE", 0))
