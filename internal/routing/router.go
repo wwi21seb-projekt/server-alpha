@@ -34,6 +34,12 @@ const contentTypeHeader = "Content-Type"
 func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtMgr managers.JWTMgr) *gin.Engine {
 	// Initialize router with logging and recovery middleware
 	router := gin.New()
+
+	// Set Gin mode to release if the environment is production
+	if os.Getenv("ENVIRONMENT") == "production" {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
 	// Initialize middleware
 	setupCommonMiddleware(router)
 	// Setup routes
