@@ -63,7 +63,7 @@ func (handler *UserHandler) RegisterUser(ctx *gin.Context) {
 	defer utils.RollbackTransaction(ctx, tx, err)
 
 	// Decode the request body into the registration request struct
-	registrationRequest := ctx.Value(utils.SanitizedPayloadKey.String()).(schemas.RegistrationRequest)
+	registrationRequest := ctx.Value(utils.SanitizedPayloadKey.String()).(*schemas.RegistrationRequest)
 
 	// Check if the username or email is taken
 	if err = checkUsernameEmailTaken(ctx, tx, registrationRequest.Username, registrationRequest.Email); err != nil {
@@ -128,7 +128,7 @@ func (handler *UserHandler) ActivateUser(ctx *gin.Context) {
 	defer utils.RollbackTransaction(ctx, tx, err)
 
 	// Decode the request body into the activation request struct
-	activationRequest := ctx.Value(utils.SanitizedPayloadKey.String()).(schemas.ActivationRequest)
+	activationRequest := ctx.Value(utils.SanitizedPayloadKey.String()).(*schemas.ActivationRequest)
 
 	// Get username from path
 	username := ctx.Param(utils.UsernameKey)
@@ -233,7 +233,7 @@ func (handler *UserHandler) ChangeTrivialInformation(ctx *gin.Context) {
 	defer utils.RollbackTransaction(ctx, tx, err)
 
 	// Decode the request body into the nickname change request struct
-	changeTrivialInformationRequest := ctx.Value(utils.SanitizedPayloadKey.String()).(schemas.ChangeTrivialInformationRequest)
+	changeTrivialInformationRequest := ctx.Value(utils.SanitizedPayloadKey.String()).(*schemas.ChangeTrivialInformationRequest)
 
 	// Get the user ID from the JWT token
 	claims, ok := ctx.Value(utils.ClaimsKey.String()).(jwt.MapClaims)
@@ -276,7 +276,7 @@ func (handler *UserHandler) ChangePassword(ctx *gin.Context) {
 	defer utils.RollbackTransaction(ctx, tx, err)
 
 	// Decode the request body into the password change request struct
-	passwordChangeRequest := ctx.Value(utils.SanitizedPayloadKey.String()).(schemas.ChangePasswordRequest)
+	passwordChangeRequest := ctx.Value(utils.SanitizedPayloadKey.String()).(*schemas.ChangePasswordRequest)
 
 	// Get the user ID from the JWT token
 	claims, ok := ctx.Value(utils.ClaimsKey.String()).(jwt.MapClaims)
@@ -327,7 +327,7 @@ func (handler *UserHandler) LoginUser(ctx *gin.Context) {
 	defer utils.RollbackTransaction(ctx, tx, err)
 
 	// Decode the request body into the login request struct
-	loginRequest := ctx.Value(utils.SanitizedPayloadKey.String()).(schemas.LoginRequest)
+	loginRequest := ctx.Value(utils.SanitizedPayloadKey.String()).(*schemas.LoginRequest)
 
 	// Check if user exists and if yes, if he is activated
 	exists, activated, err := checkUserExistenceAndActivation(ctx, tx, loginRequest.Username)
@@ -467,7 +467,7 @@ func (handler *UserHandler) SearchUsers(ctx *gin.Context) {
 // generating a new token pair, and sending it in the response.
 func (handler *UserHandler) RefreshToken(ctx *gin.Context) {
 	// Get the refresh token from the request body
-	refreshTokenRequest := ctx.Value(utils.SanitizedPayloadKey.String()).(schemas.RefreshTokenRequest)
+	refreshTokenRequest := ctx.Value(utils.SanitizedPayloadKey.String()).(*schemas.RefreshTokenRequest)
 
 	// Get the user ID and username from the refresh token
 	refreshTokenClaims, err := handler.JWTManager.ValidateJWT(refreshTokenRequest.RefreshToken)

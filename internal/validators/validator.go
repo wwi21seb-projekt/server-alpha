@@ -1,6 +1,7 @@
 package validators
 
 import (
+	"fmt"
 	"reflect"
 	"regexp"
 	"server-alpha/internal/schemas"
@@ -18,7 +19,7 @@ var instance *Validator
 var once sync.Once
 
 type Validator struct {
-	SanitizeData func(data interface{})
+	SanitizeData func(data interface{}) error
 	Validate     *validator.Validate
 	VerifyEmail  func(email string) bool
 }
@@ -32,7 +33,7 @@ func GetValidator() *Validator {
 		})
 		sanitizer := bluemonday.UGCPolicy()
 		instance = &Validator{
-			SanitizeData: func(data interface{}) { sanitizeData(sanitizer, data) },
+			SanitizeData: func(data interface{}) error { return sanitizeData(sanitizer, data) },
 			Validate:     validator.New(),
 			VerifyEmail:  func(email string) bool { return truemail.IsValid(email, configuration) },
 		}
@@ -44,21 +45,45 @@ func GetValidator() *Validator {
 }
 
 // SanitizeData uses reflection to sanitize all string fields of a struct
-func sanitizeData(policy *bluemonday.Policy, data interface{}) {
-	v := reflect.ValueOf(data).Elem() // Use Elem to dereference the pointer if necessary
+func sanitizeData(policy *bluemonday.Policy, data interface{}) error {
+	v := reflect.ValueOf(data)
+	// Ensure that the provided data is a pointer
+	if v.Kind() != reflect.Ptr {
+		return fmt.Errorf("sanitizeData expects a pointer to a struct")
+	}
+	// Dereference the pointer to get the struct
+	v = v.Elem()
+	// Ensure that we now have a struct
+	if v.Kind() != reflect.Struct {
+		return fmt.Errorf("sanitizeData expects a pointer to a struct, got a pointer to %v", v.Kind())
+	}
 
+	// Iterate over all fields of the struct
 	for i := 0; i < v.NumField(); i++ {
 		field := v.Field(i)
+		// Check if the field can be set
+		if !field.CanSet() {
+			continue
+		}
+
+		// Sanitize string fields
 		if field.Kind() == reflect.String {
 			originalText := field.String()
 			sanitizedText := policy.Sanitize(strings.TrimSpace(originalText))
 			field.SetString(sanitizedText)
 		}
-		// Handle nested structs recursively
+
+		// Recursively handle nested structs and pointers to structs
 		if field.Kind() == reflect.Struct {
-			sanitizeData(policy, field.Addr().Interface())
+			_ = sanitizeData(policy, field.Addr().Interface())
+		} else if field.Kind() == reflect.Ptr && field.Elem().Kind() == reflect.Struct {
+			// Ensure the pointer is not nil before trying to sanitize
+			if !field.IsNil() {
+				_ = sanitizeData(policy, field.Interface())
+			}
 		}
 	}
+	return nil
 }
 
 // RegisterCustomValidators registers custom validators for our
