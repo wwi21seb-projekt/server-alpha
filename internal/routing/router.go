@@ -119,7 +119,7 @@ func setupRoutes(router *gin.Engine, databaseMgr managers.DatabaseMgr, mailMgr m
 }
 
 func userRoutes(userRouter *gin.RouterGroup, userHdl handlers.UserHdl, jwtMgr managers.JWTMgr) {
-	userRouter.POST("/register", middleware.ValidateAndSanitizeStruct(schemas.RegistrationRequest{}), userHdl.RegisterUser)
+	userRouter.POST("/", middleware.ValidateAndSanitizeStruct(schemas.RegistrationRequest{}), userHdl.RegisterUser)
 	userRouter.POST("/login", middleware.ValidateAndSanitizeStruct(schemas.LoginRequest{}), userHdl.LoginUser)
 	userRouter.POST("/refresh", middleware.ValidateAndSanitizeStruct(schemas.RefreshTokenRequest{}), userHdl.RefreshToken)
 	userRouter.POST("/:username/activate", middleware.ValidateAndSanitizeStruct(schemas.ActivationRequest{}), userHdl.ActivateUser)
