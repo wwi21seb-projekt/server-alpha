@@ -29,6 +29,8 @@ var imprintDto = &schemas.ImprintDTO{
 		"ausschließlich zu nicht-kommerziellen Zwecken.",
 }
 
+const contentTypeHeader = "Content-Type"
+
 func InitRouter(databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtMgr managers.JWTMgr) *gin.Engine {
 	// Initialize router with logging and recovery middleware
 	router := gin.New()
@@ -47,12 +49,12 @@ func setupCommonMiddleware(router *gin.Engine) {
 	router.Use(cors.New(cors.Config{
 		AllowOrigins:  []string{"http://localhost:5173", "http://localhost:19000"},
 		AllowMethods:  []string{"GET", "PATCH", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:  []string{"Accept, Authorization", "Content-Type"},
-		ExposeHeaders: []string{"Content-Length", "Content-Type", "X-Correlation-ID"},
+		AllowHeaders:  []string{"Accept, Authorization", contentTypeHeader},
+		ExposeHeaders: []string{"Content-Length", contentTypeHeader, "X-Correlation-ID"},
 		MaxAge:        12 * time.Hour,
 	}))
 	router.Use(func(c *gin.Context) {
-		c.Header("Content-Type", "application/json")
+		c.Header(contentTypeHeader, "application/json")
 	})
 	router.Use(middleware.SanitizePath())
 	router.Use(middleware.LogRequest())
