@@ -60,7 +60,7 @@ func setupCommonMiddleware(router *gin.Engine) {
 
 func setupRoutes(router *gin.Engine, databaseMgr managers.DatabaseMgr, mailMgr managers.MailMgr, jwtMgr managers.JWTMgr) {
 	// Set up version route
-	router.GET("/", func(c *gin.Context) {
+	router.GET("", func(c *gin.Context) {
 		apiVersion := os.Getenv("PR_NUMBER")
 		var pullRequest string
 
@@ -120,7 +120,7 @@ func setupRoutes(router *gin.Engine, databaseMgr managers.DatabaseMgr, mailMgr m
 }
 
 func userRoutes(userRouter *gin.RouterGroup, userHdl handlers.UserHdl, jwtMgr managers.JWTMgr) {
-	userRouter.POST("/", middleware.ValidateAndSanitizeStruct(&schemas.RegistrationRequest{}), userHdl.RegisterUser)
+	userRouter.POST("", middleware.ValidateAndSanitizeStruct(&schemas.RegistrationRequest{}), userHdl.RegisterUser)
 	userRouter.POST("/login", middleware.ValidateAndSanitizeStruct(&schemas.LoginRequest{}), userHdl.LoginUser)
 	userRouter.POST("/refresh", middleware.ValidateAndSanitizeStruct(&schemas.RefreshTokenRequest{}), userHdl.RefreshToken)
 	userRouter.POST("/:username/activate", middleware.ValidateAndSanitizeStruct(&schemas.ActivationRequest{}), userHdl.ActivateUser)
@@ -129,20 +129,20 @@ func userRoutes(userRouter *gin.RouterGroup, userHdl handlers.UserHdl, jwtMgr ma
 	// The following routes require the user to be authenticated
 	userRouter.Use(jwtMgr.JWTMiddleware())
 	userRouter.GET("/:username", userHdl.HandleGetUserRequest)
-	userRouter.GET("/", userHdl.SearchUsers)
-	userRouter.PATCH("/", middleware.ValidateAndSanitizeStruct(&schemas.ChangePasswordRequest{}), userHdl.ChangePassword)
-	userRouter.PUT("/", middleware.ValidateAndSanitizeStruct(&schemas.ChangeTrivialInformationRequest{}), userHdl.ChangeTrivialInformation)
+	userRouter.GET("", userHdl.SearchUsers)
+	userRouter.PATCH("", middleware.ValidateAndSanitizeStruct(&schemas.ChangePasswordRequest{}), userHdl.ChangePassword)
+	userRouter.PUT("", middleware.ValidateAndSanitizeStruct(&schemas.ChangeTrivialInformationRequest{}), userHdl.ChangeTrivialInformation)
 }
 
 func postRoutes(postRouter *gin.RouterGroup, postHdl handlers.PostHdl, jwtMgr managers.JWTMgr) {
 	postRouter.Use(jwtMgr.JWTMiddleware())
-	postRouter.POST("/", middleware.ValidateAndSanitizeStruct(&schemas.CreatePostRequest{}), postHdl.CreatePost)
-	postRouter.GET("/", postHdl.QueryPosts)
+	postRouter.POST("", middleware.ValidateAndSanitizeStruct(&schemas.CreatePostRequest{}), postHdl.CreatePost)
+	postRouter.GET("", postHdl.QueryPosts)
 	postRouter.DELETE("/:postId", postHdl.DeletePost)
 }
 
 func subscriptionsRoutes(subscriptionsRouter *gin.RouterGroup, subscriptionHdl handlers.SubscriptionHdl) {
-	subscriptionsRouter.POST("/", middleware.ValidateAndSanitizeStruct(&schemas.SubscriptionRequest{}), subscriptionHdl.Subscribe)
+	subscriptionsRouter.POST("", middleware.ValidateAndSanitizeStruct(&schemas.SubscriptionRequest{}), subscriptionHdl.Subscribe)
 	subscriptionsRouter.DELETE("/:subscriptionId", subscriptionHdl.Unsubscribe)
 	subscriptionsRouter.GET("/:username", subscriptionHdl.HandleGetSubscriptions)
 }
