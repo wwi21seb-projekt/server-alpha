@@ -54,6 +54,7 @@ func setupCommonMiddleware(router *gin.Engine) {
 	router.Use(func(c *gin.Context) {
 		c.Header("Content-Type", "application/json")
 	})
+	router.Use(middleware.SanitizePath())
 	router.Use(middleware.LogRequest())
 }
 
