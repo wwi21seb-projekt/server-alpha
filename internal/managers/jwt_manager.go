@@ -82,14 +82,14 @@ func (jm *JWTManager) JWTMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, schemas.Unauthorized)
+			c.AbortWithStatusJSON(http.StatusUnauthorized, &schemas.ErrorDTO{Error: *schemas.Unauthorized})
 			return
 		}
 		// Validate the JWT token
 		token := authHeader[len("Bearer "):]
 		claims, err := jm.ValidateJWT(token)
 		if err != nil || claims.(jwt.MapClaims)["refresh"] == "true" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, schemas.Unauthorized)
+			c.AbortWithStatusJSON(http.StatusUnauthorized, &schemas.ErrorDTO{Error: *schemas.Unauthorized})
 			return
 		}
 		// Add the claims to the request context
