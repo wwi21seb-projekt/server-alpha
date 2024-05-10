@@ -53,7 +53,6 @@ func NewJWTManager(privateKey ed25519.PrivateKey, publicKey ed25519.PublicKey) J
 // The JWT is signed with the private key and can be used for user authentication.
 func (jm *JWTManager) GenerateJWT(userId, username string, isRefreshToken bool) (string, error) {
 	claims := generateClaims(userId, username, isRefreshToken)
-
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
 	return token.SignedString(jm.privateKey)
 }
@@ -66,18 +65,14 @@ func (jm *JWTManager) ValidateJWT(tokenString string) (jwt.Claims, error) {
 		if token.Method.Alg() != jwt.SigningMethodEdDSA.Alg() {
 			return nil, fmt.Errorf("invalid signing method")
 		}
-
 		return jm.publicKey, nil
 	})
-
 	if err != nil {
 		return nil, err
 	}
-
 	if !token.Valid {
 		return nil, jwt.ErrSignatureInvalid
 	}
-
 	return token.Claims, nil
 }
 
@@ -87,20 +82,16 @@ func (jm *JWTManager) JWTMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
-			c.JSON(http.StatusUnauthorized, schemas.Unauthorized)
-			c.Next()
+			c.AbortWithStatusJSON(http.StatusUnauthorized, schemas.Unauthorized)
 			return
 		}
-
 		// Validate the JWT token
 		token := authHeader[len("Bearer "):]
 		claims, err := jm.ValidateJWT(token)
 		if err != nil || claims.(jwt.MapClaims)["refresh"] == "true" {
-			c.JSON(http.StatusUnauthorized, schemas.Unauthorized)
-			c.Next()
+			c.AbortWithStatusJSON(http.StatusUnauthorized, schemas.Unauthorized)
 			return
 		}
-
 		// Add the claims to the request context
 		c.Set(utils.ClaimsKey.String(), claims)
 		c.Next()

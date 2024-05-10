@@ -11,17 +11,20 @@ import (
 
 func ValidateAndSanitizeStruct(obj interface{}) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if err := c.ShouldBindJSON(&obj); err != nil {
-			c.JSON(http.StatusBadRequest, schemas.BadRequest)
+		if err := c.ShouldBindJSON(obj); err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, schemas.BadRequest)
 			return
 		}
-		// Sanitize the data
 		validator := validators.GetValidator()
-		validator.SanitizeData(obj)
+		// Sanitize the data
+		if err := validator.SanitizeData(obj); err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, schemas.BadRequest)
+			return
+		}
 
 		if err := validator.Validate.Struct(obj); err != nil {
 			// Handle validation errors as before
-			c.JSON(http.StatusBadRequest, schemas.BadRequest)
+			c.AbortWithStatusJSON(http.StatusBadRequest, schemas.BadRequest)
 			return
 		}
 		// Set the sanitized object in the context

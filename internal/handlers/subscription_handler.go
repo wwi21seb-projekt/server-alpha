@@ -142,7 +142,7 @@ func (handler *SubscriptionHandler) Subscribe(ctx *gin.Context) {
 	defer utils.RollbackTransaction(ctx, tx, err)
 
 	// Decode the request body into the subscription request struct
-	subscriptionRequest := ctx.Value(utils.SanitizedPayloadKey.String()).(schemas.SubscriptionRequest)
+	subscriptionRequest := ctx.Value(utils.SanitizedPayloadKey.String()).(*schemas.SubscriptionRequest)
 
 	// Get subscribeeId from request body
 	queryString := "SELECT user_id FROM alpha_schema.users WHERE username = $1"

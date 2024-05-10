@@ -14,7 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-var imprintDto = schemas.ImprintDTO{
+var imprintDto = &schemas.ImprintDTO{
 	Text: "Impressum\n\nEinen Löwen interessiert es nicht, was Schafe über ihn denken.\n\nDiese Webseite " +
 		"wird im Rahmen eines Universitätsprojektes angeboten von:\nKurs WWI21SEB\nDuale Hochschule " +
 		"Baden-Württemberg Mannheim\nCoblitzallee 1 – 9, 68163 Mannheim\n\nKontakt:\nE-Mail: " +
@@ -104,7 +104,7 @@ func setupRoutes(router *gin.Engine, databaseMgr managers.DatabaseMgr, mailMgr m
 		userRoutes(userRouter, userHdl, jwtMgr)
 
 		// Set up post routes
-		postRouter := apiRouter.Group("/posts", jwtMgr.JWTMiddleware())
+		postRouter := apiRouter.Group("/posts")
 		postHdl := handlers.NewPostHandler(&databaseMgr, &jwtMgr)
 		// It's important to define the feed route prior to the post routes, because
 		// we don't want the JWT middleware in this unauthorized request
@@ -112,36 +112,37 @@ func setupRoutes(router *gin.Engine, databaseMgr managers.DatabaseMgr, mailMgr m
 		postRoutes(postRouter, postHdl, jwtMgr)
 
 		// Set up subscription routes
-		subscriptionsRouter := apiRouter.Group("/subscriptions", jwtMgr.JWTMiddleware())
+		subscriptionsRouter := apiRouter.Group("/subscriptions")
+		subscriptionsRouter.Use(jwtMgr.JWTMiddleware())
 		subscriptionHdl := handlers.NewSubscriptionHandler(&databaseMgr)
 		subscriptionsRoutes(subscriptionsRouter, subscriptionHdl)
 	}
 }
 
 func userRoutes(userRouter *gin.RouterGroup, userHdl handlers.UserHdl, jwtMgr managers.JWTMgr) {
-	userRouter.POST("/", middleware.ValidateAndSanitizeStruct(schemas.RegistrationRequest{}), userHdl.RegisterUser)
-	userRouter.POST("/login", middleware.ValidateAndSanitizeStruct(schemas.LoginRequest{}), userHdl.LoginUser)
-	userRouter.POST("/refresh", middleware.ValidateAndSanitizeStruct(schemas.RefreshTokenRequest{}), userHdl.RefreshToken)
-	userRouter.POST("/:username/activate", middleware.ValidateAndSanitizeStruct(schemas.ActivationRequest{}), userHdl.ActivateUser)
+	userRouter.POST("/", middleware.ValidateAndSanitizeStruct(&schemas.RegistrationRequest{}), userHdl.RegisterUser)
+	userRouter.POST("/login", middleware.ValidateAndSanitizeStruct(&schemas.LoginRequest{}), userHdl.LoginUser)
+	userRouter.POST("/refresh", middleware.ValidateAndSanitizeStruct(&schemas.RefreshTokenRequest{}), userHdl.RefreshToken)
+	userRouter.POST("/:username/activate", middleware.ValidateAndSanitizeStruct(&schemas.ActivationRequest{}), userHdl.ActivateUser)
 	userRouter.DELETE("/:username/activate", userHdl.ResendToken)
 	userRouter.GET("/:username/feed", userHdl.RetrieveUserPosts)
 	// The following routes require the user to be authenticated
 	userRouter.Use(jwtMgr.JWTMiddleware())
 	userRouter.GET("/:username", userHdl.HandleGetUserRequest)
 	userRouter.GET("/", userHdl.SearchUsers)
-	userRouter.PATCH("/", middleware.ValidateAndSanitizeStruct(schemas.ChangePasswordRequest{}), userHdl.ChangePassword)
-	userRouter.PUT("/", middleware.ValidateAndSanitizeStruct(schemas.ChangeTrivialInformationRequest{}), userHdl.ChangeTrivialInformation)
+	userRouter.PATCH("/", middleware.ValidateAndSanitizeStruct(&schemas.ChangePasswordRequest{}), userHdl.ChangePassword)
+	userRouter.PUT("/", middleware.ValidateAndSanitizeStruct(&schemas.ChangeTrivialInformationRequest{}), userHdl.ChangeTrivialInformation)
 }
 
 func postRoutes(postRouter *gin.RouterGroup, postHdl handlers.PostHdl, jwtMgr managers.JWTMgr) {
 	postRouter.Use(jwtMgr.JWTMiddleware())
-	postRouter.POST("/", middleware.ValidateAndSanitizeStruct(schemas.CreatePostRequest{}), postHdl.CreatePost)
+	postRouter.POST("/", middleware.ValidateAndSanitizeStruct(&schemas.CreatePostRequest{}), postHdl.CreatePost)
 	postRouter.GET("/", postHdl.QueryPosts)
 	postRouter.DELETE("/:postId", postHdl.DeletePost)
 }
 
 func subscriptionsRoutes(subscriptionsRouter *gin.RouterGroup, subscriptionHdl handlers.SubscriptionHdl) {
-	subscriptionsRouter.POST("/", middleware.ValidateAndSanitizeStruct(schemas.SubscriptionRequest{}), subscriptionHdl.Subscribe)
+	subscriptionsRouter.POST("/", middleware.ValidateAndSanitizeStruct(&schemas.SubscriptionRequest{}), subscriptionHdl.Subscribe)
 	subscriptionsRouter.DELETE("/:subscriptionId", subscriptionHdl.Unsubscribe)
 	subscriptionsRouter.GET("/:username", subscriptionHdl.HandleGetSubscriptions)
 }
