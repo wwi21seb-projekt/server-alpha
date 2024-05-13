@@ -8,10 +8,10 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"github.com/wwi21seb-projekt/server-alpha/internal/schemas"
+	"github.com/wwi21seb-projekt/server-alpha/internal/utils"
 	"net/http"
 	"os"
-	"server-alpha/internal/schemas"
-	"server-alpha/internal/utils"
 	"time"
 
 	"github.com/gin-gonic/gin"

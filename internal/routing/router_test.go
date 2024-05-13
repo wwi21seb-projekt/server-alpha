@@ -3,11 +3,11 @@ package routing
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"github.com/wwi21seb-projekt/server-alpha/internal/managers"
+	"github.com/wwi21seb-projekt/server-alpha/internal/managers/mocks"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
-	"server-alpha/internal/managers"
-	"server-alpha/internal/managers/mocks"
 	"testing"
 
 	"github.com/gavv/httpexpect/v2"

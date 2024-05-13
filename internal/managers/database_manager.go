@@ -4,7 +4,7 @@ package managers
 
 import (
 	log "github.com/sirupsen/logrus"
-	"server-alpha/internal/interfaces"
+	"github.com/wwi21seb-projekt/server-alpha/internal/interfaces"
 )
 
 // DatabaseMgr is an interface that defines the contract for database management.

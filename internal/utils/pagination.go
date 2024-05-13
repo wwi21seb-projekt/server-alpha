@@ -4,9 +4,9 @@ package utils
 import (
 	"errors"
 	"github.com/gin-gonic/gin"
+	"github.com/wwi21seb-projekt/server-alpha/internal/schemas"
 	"net/http"
 	"reflect"
-	"server-alpha/internal/schemas"
 	"strconv"
 )
 

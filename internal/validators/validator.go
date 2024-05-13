@@ -2,9 +2,9 @@ package validators
 
 import (
 	"fmt"
+	"github.com/wwi21seb-projekt/server-alpha/internal/schemas"
 	"reflect"
 	"regexp"
-	"server-alpha/internal/schemas"
 	"strings"
 	"sync"
 	"unicode"

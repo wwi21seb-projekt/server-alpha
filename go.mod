@@ -1,6 +1,6 @@
-module server-alpha
+module github.com/wwi21seb-projekt/server-alpha
 
-go 1.21
+go 1.22.3
 
 require (
 	github.com/gavv/httpexpect/v2 v2.16.0

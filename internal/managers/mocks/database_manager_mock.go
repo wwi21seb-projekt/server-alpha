@@ -3,7 +3,7 @@ package mocks
 
 import (
 	"github.com/stretchr/testify/mock"
-	"server-alpha/internal/interfaces"
+	"github.com/wwi21seb-projekt/server-alpha/internal/interfaces"
 )
 
 // MockDatabaseMgr defines the interface for a mock of the database manager.
