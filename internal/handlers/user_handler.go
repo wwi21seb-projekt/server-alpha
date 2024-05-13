@@ -2,11 +2,12 @@ package handlers
 
 import (
 	"errors"
-	"github.com/gin-gonic/gin"
 	"math/rand"
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/gin-gonic/gin"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -14,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/wwi21seb-projekt/errors-go/goerrors"
 	"github.com/wwi21seb-projekt/server-alpha/internal/managers"
 	"github.com/wwi21seb-projekt/server-alpha/internal/schemas"
 	"github.com/wwi21seb-projekt/server-alpha/internal/utils"
@@ -80,7 +82,7 @@ func (handler *UserHandler) RegisterUser(ctx *gin.Context) {
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(registrationRequest.Password), bcrypt.DefaultCost)
 	if err != nil {
-		utils.WriteAndLogError(ctx, schemas.InternalServerError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.InternalServerError, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -91,7 +93,7 @@ func (handler *UserHandler) RegisterUser(ctx *gin.Context) {
 
 	queryString := "INSERT INTO alpha_schema.users (user_id, username, nickname, email, password, created_at, expires_at, status, profile_picture_url) VALUES ($1, $2, $3, $4, $5, $6, $7,$8,$9)"
 	if _, err = tx.Exec(ctx, queryString, userId, registrationRequest.Username, registrationRequest.Nickname, registrationRequest.Email, hashedPassword, createdAt, expiresAt, "", ""); err != nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -143,7 +145,7 @@ func (handler *UserHandler) ActivateUser(ctx *gin.Context) {
 	if _, activated, err := checkUserExistenceAndActivation(ctx, tx, username); err != nil {
 		return
 	} else if activated {
-		utils.WriteAndLogError(ctx, schemas.UserAlreadyActivated, http.StatusAlreadyReported, errors.New("already activated"))
+		utils.WriteAndLogError(ctx, goerrors.UserAlreadyActivated, http.StatusAlreadyReported, errors.New("already activated"))
 		return
 	}
 
@@ -155,21 +157,21 @@ func (handler *UserHandler) ActivateUser(ctx *gin.Context) {
 	// Activate the user
 	queryString := "UPDATE alpha_schema.users SET activated_at = $1 WHERE user_id = $2"
 	if _, err := tx.Exec(ctx, queryString, time.Now(), userID); err != nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
 	// Delete the token
 	queryString = "DELETE FROM alpha_schema.activation_tokens WHERE token = $1"
 	if _, err := tx.Exec(ctx, queryString, activationRequest.Token); err != nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
 	// Generate token pair
 	tokenDto, err := generateTokenPair(handler, userID.String(), username)
 	if err != nil {
-		utils.WriteAndLogError(ctx, schemas.InternalServerError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.InternalServerError, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -203,7 +205,7 @@ func (handler *UserHandler) ResendToken(ctx *gin.Context) {
 	if _, activated, err := checkUserExistenceAndActivation(ctx, tx, username); err != nil {
 		return
 	} else if activated {
-		utils.WriteAndLogError(ctx, schemas.UserAlreadyActivated, http.StatusAlreadyReported,
+		utils.WriteAndLogError(ctx, goerrors.UserAlreadyActivated, http.StatusAlreadyReported,
 			errors.New("already activated"))
 		return
 	}
@@ -238,7 +240,7 @@ func (handler *UserHandler) ChangeTrivialInformation(ctx *gin.Context) {
 	// Get the user ID from the JWT token
 	claims, ok := ctx.Value(utils.ClaimsKey.String()).(jwt.MapClaims)
 	if !ok {
-		utils.WriteAndLogError(ctx, schemas.Unauthorized, http.StatusUnauthorized,
+		utils.WriteAndLogError(ctx, goerrors.Unauthorized, http.StatusUnauthorized,
 			errors.New("unauthorized"))
 		return
 	}
@@ -247,7 +249,7 @@ func (handler *UserHandler) ChangeTrivialInformation(ctx *gin.Context) {
 	// Change the user's nickname and status
 	queryString := "UPDATE alpha_schema.users SET nickname = $1, status = $2 WHERE user_id = $3"
 	if _, err := tx.Exec(ctx, queryString, changeTrivialInformationRequest.NewNickname, changeTrivialInformationRequest.Status, userId); err != nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -281,7 +283,7 @@ func (handler *UserHandler) ChangePassword(ctx *gin.Context) {
 	// Get the user ID from the JWT token
 	claims, ok := ctx.Value(utils.ClaimsKey.String()).(jwt.MapClaims)
 	if !ok {
-		utils.WriteAndLogError(ctx, schemas.Unauthorized, http.StatusUnauthorized, errors.New("unauthorized"))
+		utils.WriteAndLogError(ctx, goerrors.Unauthorized, http.StatusUnauthorized, errors.New("unauthorized"))
 		return
 	}
 	username := claims["username"].(string)
@@ -295,14 +297,14 @@ func (handler *UserHandler) ChangePassword(ctx *gin.Context) {
 	// Hash the new password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(passwordChangeRequest.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
-		utils.WriteAndLogError(ctx, schemas.InternalServerError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.InternalServerError, http.StatusInternalServerError, err)
 		return
 	}
 
 	// Update the user's password in the database
 	queryString := "UPDATE alpha_schema.users SET password = $1 WHERE user_id = $2"
 	if _, err = tx.Exec(ctx, queryString, hashedPassword, userId); err != nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -336,12 +338,12 @@ func (handler *UserHandler) LoginUser(ctx *gin.Context) {
 	}
 
 	if !exists {
-		utils.WriteAndLogError(ctx, schemas.InvalidCredentials, 404, errors.New("username does not exist"))
+		utils.WriteAndLogError(ctx, goerrors.InvalidCredentials, 404, errors.New("username does not exist"))
 		return
 	}
 
 	if !activated {
-		utils.WriteAndLogError(ctx, schemas.UserNotActivated, 403, errors.New("user not activated"))
+		utils.WriteAndLogError(ctx, goerrors.UserNotActivated, 403, errors.New("user not activated"))
 		return
 	}
 
@@ -359,7 +361,7 @@ func (handler *UserHandler) LoginUser(ctx *gin.Context) {
 	// Generate token pair
 	tokenDto, err := generateTokenPair(handler, userId.String(), loginRequest.Username)
 	if err != nil {
-		utils.WriteAndLogError(ctx, schemas.InternalServerError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.InternalServerError, http.StatusInternalServerError, err)
 		return
 
 	}
@@ -386,7 +388,7 @@ func (handler *UserHandler) HandleGetUserRequest(ctx *gin.Context) {
 
 	row := handler.DatabaseManager.GetPool().QueryRow(ctx, queryString, username)
 	if err := row.Scan(&userId, &user.Username, &user.Nickname, &user.Status, &user.ProfilePicture); err != nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -394,7 +396,7 @@ func (handler *UserHandler) HandleGetUserRequest(ctx *gin.Context) {
 	queryString = "SELECT COUNT(*) FROM alpha_schema.posts WHERE author_id = $1"
 	row = handler.DatabaseManager.GetPool().QueryRow(ctx, queryString, userId)
 	if err := row.Scan(&user.Posts); err != nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -402,7 +404,7 @@ func (handler *UserHandler) HandleGetUserRequest(ctx *gin.Context) {
 	queryString = "SELECT COUNT(*) FROM alpha_schema.subscriptions WHERE subscribee_id = $1"
 	row = handler.DatabaseManager.GetPool().QueryRow(ctx, queryString, userId)
 	if err := row.Scan(&user.Follower); err != nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -410,7 +412,7 @@ func (handler *UserHandler) HandleGetUserRequest(ctx *gin.Context) {
 	queryString = "SELECT COUNT(*) FROM alpha_schema.subscriptions WHERE subscriber_id = $1"
 	row = handler.DatabaseManager.GetPool().QueryRow(ctx, queryString, userId)
 	if err := row.Scan(&user.Following); err != nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -435,7 +437,7 @@ func (handler *UserHandler) SearchUsers(ctx *gin.Context) {
 	searchQuery := ctx.Query(utils.UsernameParamKey)
 	offset, limit, err := utils.ParsePaginationParams(ctx)
 	if err != nil {
-		utils.WriteAndLogError(ctx, schemas.BadRequest, http.StatusBadRequest, err)
+		utils.WriteAndLogError(ctx, goerrors.BadRequest, http.StatusBadRequest, err)
 		return
 	}
 
@@ -443,7 +445,7 @@ func (handler *UserHandler) SearchUsers(ctx *gin.Context) {
 	queryString := "SELECT username, nickname, profile_picture_url, levenshtein(username, $1) as ld FROM alpha_schema.users WHERE levenshtein(username, $1) <= 5 ORDER BY ld"
 	rows, err := handler.DatabaseManager.GetPool().Query(ctx, queryString, searchQuery)
 	if err != nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 	defer rows.Close()
@@ -454,7 +456,7 @@ func (handler *UserHandler) SearchUsers(ctx *gin.Context) {
 	for rows.Next() {
 		user := schemas.AuthorDTO{}
 		if err := rows.Scan(&user.Username, &user.Nickname, &user.ProfilePictureURL, &ld); err != nil {
-			utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+			utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 			return
 		}
 		users = append(users, user)
@@ -472,7 +474,7 @@ func (handler *UserHandler) RefreshToken(ctx *gin.Context) {
 	// Get the user ID and username from the refresh token
 	refreshTokenClaims, err := handler.JWTManager.ValidateJWT(refreshTokenRequest.RefreshToken)
 	if err != nil {
-		utils.WriteAndLogError(ctx, schemas.InvalidToken, http.StatusUnauthorized, err)
+		utils.WriteAndLogError(ctx, goerrors.InvalidToken, http.StatusUnauthorized, err)
 		return
 	}
 
@@ -482,14 +484,14 @@ func (handler *UserHandler) RefreshToken(ctx *gin.Context) {
 	isRefreshToken := refreshClaims["refresh"].(string)
 
 	if isRefreshToken != "true" {
-		utils.WriteAndLogError(ctx, schemas.Unauthorized, http.StatusUnauthorized, errInvalidToken)
+		utils.WriteAndLogError(ctx, goerrors.Unauthorized, http.StatusUnauthorized, errInvalidToken)
 		return
 	}
 
 	// Generate token pair
 	tokenDto, err := generateTokenPair(handler, userId, username)
 	if err != nil {
-		utils.WriteAndLogError(ctx, schemas.InternalServerError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.InternalServerError, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -503,7 +505,7 @@ func retrieveUserIdAndEmail(ctx *gin.Context, tx pgx.Tx, username string) (strin
 	queryString := "SELECT email, user_id FROM alpha_schema.users WHERE username = $1"
 	rows, err := tx.Query(ctx, queryString, username)
 	if err != nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return "", uuid.UUID{}, true
 	}
 	defer rows.Close()
@@ -512,11 +514,11 @@ func retrieveUserIdAndEmail(ctx *gin.Context, tx pgx.Tx, username string) (strin
 	var userID uuid.UUID
 	if rows.Next() {
 		if err := rows.Scan(&email, &userID); err != nil {
-			utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+			utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 			return "", uuid.UUID{}, true
 		}
 	} else {
-		utils.WriteAndLogError(ctx, schemas.UserNotFound, http.StatusNotFound, errors.New("user not found"))
+		utils.WriteAndLogError(ctx, goerrors.UserNotFound, http.StatusNotFound, errors.New("user not found"))
 		return "", uuid.UUID{}, true
 	}
 
@@ -528,7 +530,7 @@ func checkUsernameEmailTaken(ctx *gin.Context, tx pgx.Tx, username, email string
 	queryString := "SELECT username, email FROM alpha_schema.users WHERE username = $1 OR email = $2"
 	rows, err := tx.Query(ctx, queryString, username, email)
 	if err != nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return err
 	}
 	defer rows.Close()
@@ -538,15 +540,15 @@ func checkUsernameEmailTaken(ctx *gin.Context, tx pgx.Tx, username, email string
 		var foundEmail string
 
 		if err := rows.Scan(&foundUsername, &foundEmail); err != nil {
-			utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+			utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 			return err
 		}
 
-		customErr := &schemas.CustomError{}
+		customErr := &goerrors.CustomError{}
 		if foundUsername == username {
-			customErr = schemas.UsernameTaken
+			customErr = goerrors.UsernameTaken
 		} else {
-			customErr = schemas.EmailTaken
+			customErr = goerrors.EmailTaken
 		}
 
 		err = errors.New("username or email taken")
@@ -562,24 +564,24 @@ func checkTokenValidity(ctx *gin.Context, tx pgx.Tx, token, username string) err
 	queryString := "SELECT expires_at FROM alpha_schema.activation_tokens WHERE token = $1 AND user_id = (SELECT user_id FROM alpha_schema.users WHERE username = $2)"
 	rows, err := tx.Query(ctx, queryString, token, username)
 	if err != nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return err
 	}
 	defer rows.Close()
 
 	if !rows.Next() {
-		utils.WriteAndLogError(ctx, schemas.InvalidToken, http.StatusUnauthorized, errInvalidToken)
+		utils.WriteAndLogError(ctx, goerrors.InvalidToken, http.StatusUnauthorized, errInvalidToken)
 		return errInvalidToken
 	}
 
 	var expiresAt pgtype.Timestamptz
 	if err := rows.Scan(&expiresAt); err != nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return err
 	}
 
 	if time.Now().After(expiresAt.Time) {
-		utils.WriteAndLogError(ctx, schemas.ActivationTokenExpired, http.StatusUnauthorized,
+		utils.WriteAndLogError(ctx, goerrors.ActivationTokenExpired, http.StatusUnauthorized,
 			errors.New("token expired"))
 		return errors.New("token expired")
 	}
@@ -592,7 +594,7 @@ func checkUserExistenceAndActivation(ctx *gin.Context, tx pgx.Tx, username strin
 	queryString := "SELECT activated_at FROM alpha_schema.users WHERE username = $1"
 	rows, err := tx.Query(ctx, queryString, username)
 	if err != nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return false, false, err
 	}
 	defer rows.Close()
@@ -600,7 +602,7 @@ func checkUserExistenceAndActivation(ctx *gin.Context, tx pgx.Tx, username strin
 	var activatedAt pgtype.Timestamptz
 	if rows.Next() {
 		if err := rows.Scan(&activatedAt); err != nil {
-			utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+			utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 			return false, false, err
 		}
 	} else {
@@ -620,19 +622,19 @@ func (handler *UserHandler) generateAndSendToken(ctx *gin.Context, tx pgx.Tx, em
 	// Delete the old token if it exists
 	queryString := "DELETE FROM alpha_schema.activation_tokens WHERE user_id = $1"
 	if _, err := tx.Exec(ctx, queryString, userId); err != nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return err
 	}
 
 	queryString = "INSERT INTO alpha_schema.activation_tokens (token_id, user_id, token, expires_at) VALUES ($1, $2, $3, $4)"
 	if _, err := tx.Exec(ctx, queryString, tokenID, userId, token, tokenExpiresAt); err != nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return err
 	}
 
 	// Send the token to the user
 	if err := handler.MailManager.SendActivationMail(email, username, token, "UI-Service"); err != nil {
-		utils.WriteAndLogError(ctx, schemas.EmailNotSent, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.EmailNotSent, http.StatusInternalServerError, err)
 		return err
 	}
 
@@ -652,7 +654,7 @@ func checkPassword(ctx *gin.Context, tx pgx.Tx, username, givenPassword string) 
 	queryString := "SELECT password, user_id FROM alpha_schema.users WHERE username = $1"
 	rows, err := tx.Query(ctx, queryString, username)
 	if err != nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return err
 	}
 	defer rows.Close()
@@ -662,12 +664,12 @@ func checkPassword(ctx *gin.Context, tx pgx.Tx, username, givenPassword string) 
 	rows.Next() // We already asserted existence earlier, so we can assume that the row exists
 
 	if err := rows.Scan(&password, &userId); err != nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return err
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(password), []byte(givenPassword)); err != nil {
-		utils.WriteAndLogError(ctx, schemas.InvalidCredentials, http.StatusForbidden, err)
+		utils.WriteAndLogError(ctx, goerrors.InvalidCredentials, http.StatusForbidden, err)
 		return err
 	}
 	return nil
@@ -700,7 +702,7 @@ func (handler *UserHandler) RetrieveUserPosts(ctx *gin.Context) {
 
 	offset, limit, err := utils.ParsePaginationParams(ctx)
 	if err != nil {
-		utils.WriteAndLogError(ctx, schemas.BadRequest, http.StatusBadRequest, err)
+		utils.WriteAndLogError(ctx, goerrors.BadRequest, http.StatusBadRequest, err)
 		return
 	}
 
@@ -710,7 +712,7 @@ func (handler *UserHandler) RetrieveUserPosts(ctx *gin.Context) {
 		"WHERE u.username = $1 ORDER BY p.created_at DESC"
 	rows, err := handler.DatabaseManager.GetPool().Query(ctx, queryString, username)
 	if err != nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 	defer rows.Close()
@@ -724,7 +726,7 @@ func (handler *UserHandler) RetrieveUserPosts(ctx *gin.Context) {
 	for rows.Next() {
 		post := schemas.PostDTO{}
 		if err := rows.Scan(&post.PostId, &post.Content, &createdAt, &longitude, &latitude, &accuracy); err != nil {
-			utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+			utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 			return
 		}
 

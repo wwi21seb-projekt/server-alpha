@@ -3,11 +3,13 @@ package utils
 
 import (
 	"errors"
-	"github.com/gin-gonic/gin"
-	"github.com/wwi21seb-projekt/server-alpha/internal/schemas"
 	"net/http"
 	"reflect"
 	"strconv"
+
+	"github.com/gin-gonic/gin"
+	"github.com/wwi21seb-projekt/errors-go/goerrors"
+	"github.com/wwi21seb-projekt/server-alpha/internal/schemas"
 )
 
 // ParsePaginationParams extracts the 'offset' and 'limit' parameters from the request's query parameters.
@@ -58,7 +60,7 @@ func SendPaginatedResponse(ctx *gin.Context, records interface{}, offset, limit,
 
 	// Check if v is not a slice.
 	if v.Kind() != reflect.Slice {
-		WriteAndLogError(ctx, schemas.BadRequest, http.StatusBadRequest, errors.New("records not a valid list"))
+		WriteAndLogError(ctx, goerrors.BadRequest, http.StatusBadRequest, errors.New("records not a valid list"))
 		return
 	}
 

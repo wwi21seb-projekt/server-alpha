@@ -2,6 +2,7 @@ package utils
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/wwi21seb-projekt/errors-go/goerrors"
 	"github.com/wwi21seb-projekt/server-alpha/internal/schemas"
 )
 
@@ -14,7 +15,7 @@ func WriteAndLogResponse(ctx *gin.Context, response interface{}, statusCode int)
 
 // WriteAndLogError logs the provided error and sends an error response with the specified status code and error details.
 // If encoding the error response fails, it logs and sends an InternalServerError response.
-func WriteAndLogError(c *gin.Context, customErr *schemas.CustomError, statusCode int, err error) {
+func WriteAndLogError(c *gin.Context, customErr *goerrors.CustomError, statusCode int, err error) {
 	LogMessageWithFields(c, "error", "Error occurred: "+err.Error())
 	LogMessageWithFields(c, "error", "Returning "+customErr.Code+" / "+customErr.Message)
 	errorDto := &schemas.ErrorDTO{

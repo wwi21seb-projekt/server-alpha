@@ -4,13 +4,14 @@ package internal
 import (
 	"context"
 	"fmt"
-	log "github.com/sirupsen/logrus"
-	"github.com/wwi21seb-projekt/server-alpha/internal/managers"
-	"github.com/wwi21seb-projekt/server-alpha/internal/utils"
 	"net/http"
 	"os"
 	"os/signal"
 	"time"
+
+	log "github.com/sirupsen/logrus"
+	"github.com/wwi21seb-projekt/server-alpha/internal/managers"
+	"github.com/wwi21seb-projekt/server-alpha/internal/utils"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
