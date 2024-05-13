@@ -14,9 +14,9 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"golang.org/x/crypto/bcrypt"
 
-	"server-alpha/internal/managers"
-	"server-alpha/internal/schemas"
-	"server-alpha/internal/utils"
+	"github.com/wwi21seb-projekt/server-alpha/internal/managers"
+	"github.com/wwi21seb-projekt/server-alpha/internal/schemas"
+	"github.com/wwi21seb-projekt/server-alpha/internal/utils"
 )
 
 // UserHdl defines the interface for handling user-related HTTP requests.

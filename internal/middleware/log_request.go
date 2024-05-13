@@ -3,7 +3,7 @@ package middleware
 import (
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
-	"server-alpha/internal/utils"
+	"github.com/wwi21seb-projekt/server-alpha/internal/utils"
 )
 
 func LogRequest() gin.HandlerFunc {

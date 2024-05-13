@@ -1,13 +1,13 @@
 package routing
 
 import (
+	"github.com/wwi21seb-projekt/server-alpha/internal/handlers"
+	"github.com/wwi21seb-projekt/server-alpha/internal/managers"
+	"github.com/wwi21seb-projekt/server-alpha/internal/middleware"
+	"github.com/wwi21seb-projekt/server-alpha/internal/schemas"
+	"github.com/wwi21seb-projekt/server-alpha/internal/utils"
 	"net/http"
 	"os"
-	"server-alpha/internal/handlers"
-	"server-alpha/internal/managers"
-	"server-alpha/internal/middleware"
-	"server-alpha/internal/schemas"
-	"server-alpha/internal/utils"
 	"time"
 
 	"github.com/gin-contrib/cors"

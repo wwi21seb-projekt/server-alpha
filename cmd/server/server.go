@@ -3,7 +3,7 @@
 package main
 
 import (
-	"server-alpha/internal"
+	"github.com/wwi21seb-projekt/server-alpha/internal"
 )
 
 // Main is the entry point of the application.

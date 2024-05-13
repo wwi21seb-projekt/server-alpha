@@ -5,16 +5,16 @@ import (
 	"context"
 	"fmt"
 	log "github.com/sirupsen/logrus"
+	"github.com/wwi21seb-projekt/server-alpha/internal/managers"
+	"github.com/wwi21seb-projekt/server-alpha/internal/utils"
 	"net/http"
 	"os"
 	"os/signal"
-	"server-alpha/internal/managers"
-	"server-alpha/internal/utils"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
-	"server-alpha/internal/routing"
+	"github.com/wwi21seb-projekt/server-alpha/internal/routing"
 )
 
 const (

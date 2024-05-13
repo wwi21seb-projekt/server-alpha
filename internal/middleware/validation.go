@@ -1,10 +1,10 @@
 package middleware
 
 import (
+	"github.com/wwi21seb-projekt/server-alpha/internal/schemas"
+	"github.com/wwi21seb-projekt/server-alpha/internal/utils"
+	"github.com/wwi21seb-projekt/server-alpha/internal/validators"
 	"net/http"
-	"server-alpha/internal/schemas"
-	"server-alpha/internal/utils"
-	"server-alpha/internal/validators"
 
 	"github.com/gin-gonic/gin"
 )

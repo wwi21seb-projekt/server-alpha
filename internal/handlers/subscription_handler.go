@@ -4,10 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/wwi21seb-projekt/server-alpha/internal/managers"
+	"github.com/wwi21seb-projekt/server-alpha/internal/schemas"
+	"github.com/wwi21seb-projekt/server-alpha/internal/utils"
 	"net/http"
-	"server-alpha/internal/managers"
-	"server-alpha/internal/schemas"
-	"server-alpha/internal/utils"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"

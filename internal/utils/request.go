@@ -2,7 +2,7 @@ package utils
 
 import (
 	"github.com/gin-gonic/gin"
-	"server-alpha/internal/schemas"
+	"github.com/wwi21seb-projekt/server-alpha/internal/schemas"
 )
 
 // WriteAndLogResponse encodes the response object to JSON and writes it to the HTTP response.

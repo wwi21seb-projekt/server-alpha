@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	"server-alpha/internal/utils"
+	"github.com/wwi21seb-projekt/server-alpha/internal/utils"
 
 	"github.com/gin-gonic/gin"
 )

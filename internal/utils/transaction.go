@@ -4,9 +4,9 @@ import (
 	"errors"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
+	"github.com/wwi21seb-projekt/server-alpha/internal/interfaces"
+	"github.com/wwi21seb-projekt/server-alpha/internal/schemas"
 	"net/http"
-	"server-alpha/internal/interfaces"
-	"server-alpha/internal/schemas"
 )
 
 // BeginTransaction begins a new database transaction with a context deadline.
