@@ -2,11 +2,12 @@ package utils
 
 import (
 	"errors"
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
+	"github.com/wwi21seb-projekt/errors-go/goerrors"
 	"github.com/wwi21seb-projekt/server-alpha/internal/interfaces"
-	"github.com/wwi21seb-projekt/server-alpha/internal/schemas"
-	"net/http"
 )
 
 // BeginTransaction begins a new database transaction with a context deadline.
@@ -18,7 +19,7 @@ func BeginTransaction(ctx *gin.Context, pool interfaces.PgxPoolIface) pgx.Tx {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		LogMessageWithFieldsAndError(ctx, "error", "Error beginning transaction", err)
-		WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return nil
 	}
 
@@ -40,7 +41,7 @@ func RollbackTransaction(ctx *gin.Context, tx pgx.Tx, err error) {
 			}
 
 			LogMessageWithFields(ctx, "debug", "Context canceled")
-			WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+			WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		}
 		LogMessageWithFields(ctx, "debug", "Transaction rolled back")
 	}
@@ -60,7 +61,7 @@ func CommitTransaction(ctx *gin.Context, tx pgx.Tx) error {
 
 	if err != nil {
 		LogMessageWithFieldsAndError(ctx, "error", "Error committing transaction", err)
-		WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return err
 	}
 

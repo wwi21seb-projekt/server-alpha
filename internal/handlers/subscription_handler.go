@@ -3,12 +3,14 @@ package handlers
 import (
 	"errors"
 	"fmt"
+	"net/http"
+	"time"
+
 	"github.com/gin-gonic/gin"
+	"github.com/wwi21seb-projekt/errors-go/goerrors"
 	"github.com/wwi21seb-projekt/server-alpha/internal/managers"
 	"github.com/wwi21seb-projekt/server-alpha/internal/schemas"
 	"github.com/wwi21seb-projekt/server-alpha/internal/utils"
-	"net/http"
-	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -45,7 +47,7 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(ctx *gin.Context) {
 	// Get pagination parameters
 	offset, limit, err := utils.ParsePaginationParams(ctx)
 	if err != nil {
-		utils.WriteAndLogError(ctx, schemas.BadRequest, http.StatusBadRequest, err)
+		utils.WriteAndLogError(ctx, goerrors.BadRequest, http.StatusBadRequest, err)
 		return
 	}
 
@@ -63,11 +65,11 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(ctx *gin.Context) {
 	findUserQuery := "SELECT user_id FROM alpha_schema.users WHERE username = $1"
 	rows, err := handler.DatabaseManager.GetPool().Query(ctx, findUserQuery, username)
 	if err != nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 	if !rows.Next() {
-		utils.WriteAndLogError(ctx, schemas.UserNotFound, http.StatusNotFound, errors.New("user not found"))
+		utils.WriteAndLogError(ctx, goerrors.UserNotFound, http.StatusNotFound, errors.New("user not found"))
 		return
 	}
 
@@ -91,7 +93,7 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(ctx *gin.Context) {
 
 	rows, err = handler.DatabaseManager.GetPool().Query(ctx, subscriptionQuery, jwtUserId, username)
 	if err != nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -102,7 +104,7 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(ctx *gin.Context) {
 		followerId, followingId := uuid.UUID{}, uuid.UUID{}
 
 		if err := rows.Scan(&followingId, &followerId, &subscription.Username, &subscription.Nickname, &subscription.ProfilePictureUrl); err != nil {
-			utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+			utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 			return
 		}
 
@@ -121,7 +123,7 @@ func (handler *SubscriptionHandler) HandleGetSubscriptions(ctx *gin.Context) {
 	row := handler.DatabaseManager.GetPool().QueryRow(ctx, countQuery, username)
 	var totalSubscriptions int
 	if err := row.Scan(&totalSubscriptions); err != nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -150,11 +152,11 @@ func (handler *SubscriptionHandler) Subscribe(ctx *gin.Context) {
 	var subscribeeId string
 	if err = row.Scan(&subscribeeId); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			utils.WriteAndLogError(ctx, schemas.UserNotFound, http.StatusNotFound, err)
+			utils.WriteAndLogError(ctx, goerrors.UserNotFound, http.StatusNotFound, err)
 			return
 		}
 
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -165,7 +167,7 @@ func (handler *SubscriptionHandler) Subscribe(ctx *gin.Context) {
 
 	// Check and throw error if the user wants to subscribe to himself
 	if jwtUserId == subscribeeId {
-		utils.WriteAndLogError(ctx, schemas.SubscriptionSelfFollow, http.StatusNotAcceptable,
+		utils.WriteAndLogError(ctx, goerrors.SubscriptionSelfFollow, http.StatusNotAcceptable,
 			errors.New("user cannot subscribe to himself"))
 		return
 	}
@@ -177,14 +179,14 @@ func (handler *SubscriptionHandler) Subscribe(ctx *gin.Context) {
 
 	if err := rows.Scan(&subscriptionId); err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
-			utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+			utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 			return
 		}
 	}
 
 	if subscriptionId != uuid.Nil {
 		// User is already subscribed, since the subscriptionId is not nil
-		utils.WriteAndLogError(ctx, schemas.SubscriptionAlreadyExists, http.StatusConflict,
+		utils.WriteAndLogError(ctx, goerrors.SubscriptionAlreadyExists, http.StatusConflict,
 			errors.New("subscription already exists"))
 		return
 	}
@@ -195,7 +197,7 @@ func (handler *SubscriptionHandler) Subscribe(ctx *gin.Context) {
 	createdAt := time.Now()
 	if _, err := tx.Exec(ctx, queryString, subscriptionId, jwtUserId, subscribeeId, createdAt); err != nil {
 		log.Errorf("error while inserting subscription: %v", err)
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -240,17 +242,17 @@ func (handler *SubscriptionHandler) Unsubscribe(ctx *gin.Context) {
 	var subscriberId, subscribeeId string
 	if err := row.Scan(&subscriberId, &subscribeeId); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			utils.WriteAndLogError(ctx, schemas.SubscriptionNotFound, http.StatusNotFound,
+			utils.WriteAndLogError(ctx, goerrors.SubscriptionNotFound, http.StatusNotFound,
 				errors.New("subscription not found"))
 			return
 		}
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
 	// Check and throw error if user wants to delete someone else's subscription
 	if subscriberId != jwtUserId {
-		utils.WriteAndLogError(ctx, schemas.UnsubscribeForbidden, http.StatusForbidden,
+		utils.WriteAndLogError(ctx, goerrors.UnsubscribeForbidden, http.StatusForbidden,
 			errors.New("you can only delete your own subscriptions"))
 		return
 	}
@@ -259,11 +261,11 @@ func (handler *SubscriptionHandler) Unsubscribe(ctx *gin.Context) {
 	queryString = "DELETE FROM alpha_schema.subscriptions WHERE subscription_id = $1"
 	if _, err := tx.Exec(ctx, queryString, subscriptionId); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			utils.WriteAndLogError(ctx, schemas.SubscriptionNotFound, http.StatusNotFound,
+			utils.WriteAndLogError(ctx, goerrors.SubscriptionNotFound, http.StatusNotFound,
 				errors.New("subscription not found"))
 			return
 		}
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 

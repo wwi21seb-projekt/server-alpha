@@ -4,15 +4,17 @@ package handlers
 import (
 	"errors"
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"github.com/wwi21seb-projekt/server-alpha/internal/managers"
-	"github.com/wwi21seb-projekt/server-alpha/internal/schemas"
-	"github.com/wwi21seb-projekt/server-alpha/internal/utils"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/wwi21seb-projekt/errors-go/goerrors"
+	"github.com/wwi21seb-projekt/server-alpha/internal/managers"
+	"github.com/wwi21seb-projekt/server-alpha/internal/schemas"
+	"github.com/wwi21seb-projekt/server-alpha/internal/utils"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -37,6 +39,7 @@ type PostHandler struct {
 
 var hashtagRegex = regexp.MustCompile(`#\w+`)
 var errTransaction = errors.New("error beginning transaction")
+var bearerPrefix = "Bearer "
 
 // NewPostHandler returns a new PostHandler with the provided managers and validator.
 func NewPostHandler(databaseManager *managers.DatabaseMgr, jwtManager *managers.JWTMgr) PostHdl {
@@ -53,7 +56,7 @@ func (handler *PostHandler) CreatePost(ctx *gin.Context) {
 	// Begin a new transaction
 	tx := utils.BeginTransaction(ctx, handler.DatabaseManager.GetPool())
 	if tx == nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, errTransaction)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, errTransaction)
 		return
 	}
 	var err error
@@ -89,7 +92,7 @@ func (handler *PostHandler) CreatePost(ctx *gin.Context) {
 
 	_, err = tx.Exec(ctx, queryString, queryArgs...)
 	if err != nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -103,13 +106,13 @@ func (handler *PostHandler) CreatePost(ctx *gin.Context) {
 						ON CONFLICT (content) DO UPDATE SET content=alpha_schema.hashtags.content 
 						RETURNING hashtag_id`
 		if err := tx.QueryRow(ctx, queryString, hashtagId, hashtag).Scan(&hashtagId); err != nil {
-			utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+			utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 			return
 		}
 
 		queryString = "INSERT INTO alpha_schema.many_posts_has_many_hashtags (post_id_posts, hashtag_id_hashtags) VALUES($1, $2)"
 		if _, err = tx.Exec(ctx, queryString, postId, hashtagId); err != nil {
-			utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+			utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 			return
 		}
 	}
@@ -120,7 +123,7 @@ func (handler *PostHandler) CreatePost(ctx *gin.Context) {
 
 	author := &schemas.AuthorDTO{}
 	if err := row.Scan(&author.Username, &author.Nickname); err != nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -155,7 +158,7 @@ func (handler *PostHandler) DeletePost(ctx *gin.Context) {
 	// Begin a new transaction
 	tx := utils.BeginTransaction(ctx, handler.DatabaseManager.GetPool())
 	if tx == nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, errTransaction)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, errTransaction)
 		return
 	}
 	var err error
@@ -174,17 +177,17 @@ func (handler *PostHandler) DeletePost(ctx *gin.Context) {
 	var content string
 	if err := row.Scan(&authorId, &content); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			utils.WriteAndLogError(ctx, schemas.PostNotFound, http.StatusNotFound, err)
+			utils.WriteAndLogError(ctx, goerrors.PostNotFound, http.StatusNotFound, err)
 			return
 		}
 
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
 	userId := claims["sub"].(string)
 	if userId != authorId {
-		utils.WriteAndLogError(ctx, schemas.DeletePostForbidden, http.StatusForbidden,
+		utils.WriteAndLogError(ctx, goerrors.DeletePostForbidden, http.StatusForbidden,
 			errors.New("user is not the author of the post"))
 		return
 	}
@@ -192,7 +195,7 @@ func (handler *PostHandler) DeletePost(ctx *gin.Context) {
 	// Delete the post
 	queryString = "DELETE FROM alpha_schema.posts WHERE post_id = $1"
 	if _, err = tx.Exec(ctx, queryString, postId); err != nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
@@ -206,7 +209,7 @@ func (handler *PostHandler) DeletePost(ctx *gin.Context) {
 
 	for _, hashtag := range hashtags {
 		if _, err = tx.Exec(ctx, queryString, hashtag); err != nil {
-			utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+			utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 			return
 		}
 	}
@@ -225,7 +228,7 @@ func (handler *PostHandler) DeletePost(ctx *gin.Context) {
 func (handler *PostHandler) QueryPosts(ctx *gin.Context) {
 	tx := utils.BeginTransaction(ctx, handler.DatabaseManager.GetPool())
 	if tx == nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, errTransaction)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, errTransaction)
 		return
 	}
 	var err error
@@ -274,7 +277,7 @@ func (handler *PostHandler) QueryPosts(ctx *gin.Context) {
 	paginatedResponse := createPaginatedResponse(posts, lastPostId, limit, count)
 
 	if err := utils.CommitTransaction(ctx, tx); err != nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 	}
 
 	utils.WriteAndLogResponse(ctx, paginatedResponse, http.StatusOK)
@@ -286,7 +289,7 @@ func (handler *PostHandler) HandleGetFeedRequest(ctx *gin.Context) {
 	// Begin a new transaction
 	tx := utils.BeginTransaction(ctx, handler.DatabaseManager.GetPool())
 	if tx == nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError,
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError,
 			errTransaction)
 		return
 	}
@@ -308,7 +311,7 @@ func (handler *PostHandler) HandleGetFeedRequest(ctx *gin.Context) {
 	paginatedResponse := createPaginatedResponse(posts, lastPostId, limit, records)
 
 	if err := utils.CommitTransaction(ctx, tx); err != nil {
-		utils.WriteAndLogError(ctx, schemas.DatabaseError, http.StatusInternalServerError, err)
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 	}
 
 	utils.WriteAndLogResponse(ctx, paginatedResponse, http.StatusOK)
@@ -347,16 +350,16 @@ func determineFeedType(c *gin.Context, handler *PostHandler) (bool, jwt.Claims, 
 	if authHeader == "" {
 		publicFeedWanted = true
 	} else {
-		if !strings.HasPrefix(authHeader, "Bearer ") || len(authHeader) <= len("Bearer ") {
+		if !strings.HasPrefix(authHeader, bearerPrefix) || len(authHeader) <= len(bearerPrefix) {
 			err = errors.New("invalid authorization header")
-			utils.WriteAndLogError(c, schemas.InvalidToken, http.StatusBadRequest, err)
+			utils.WriteAndLogError(c, goerrors.InvalidToken, http.StatusBadRequest, err)
 			return false, nil, err
 		}
 
-		jwtToken := authHeader[len("Bearer "):]
+		jwtToken := authHeader[len(bearerPrefix):]
 		claims, err = handler.JWTManager.ValidateJWT(jwtToken)
 		if err != nil {
-			utils.WriteAndLogError(c, schemas.Unauthorized, http.StatusUnauthorized, err)
+			utils.WriteAndLogError(c, goerrors.Unauthorized, http.StatusUnauthorized, err)
 			return false, nil, err
 		}
 
@@ -435,13 +438,13 @@ func retrieveFeed(ctx *gin.Context, tx pgx.Tx, publicFeedWanted bool,
 // RetrieveCountAndRecords retrieves the count of posts that match the criteria and the corresponding post records.
 // It executes the provided count and data queries, processes the results, and returns the post count along with the post DTOs.
 func retrieveCountAndRecords(ctx *gin.Context, tx pgx.Tx, countQuery string, countQueryArgs []interface{},
-	dataQuery string, dataQueryArgs []interface{}) (int, []*schemas.PostDTO, *schemas.CustomError, int, error) {
+	dataQuery string, dataQueryArgs []interface{}) (int, []*schemas.PostDTO, *goerrors.CustomError, int, error) {
 	// Get the count of posts in the database that match the criteria
 	row := tx.QueryRow(ctx, countQuery, countQueryArgs...)
 
 	var count int
 	if err := row.Scan(&count); err != nil {
-		return 0, nil, schemas.DatabaseError, http.StatusInternalServerError, err
+		return 0, nil, goerrors.DatabaseError, http.StatusInternalServerError, err
 	}
 
 	var rows pgx.Rows
@@ -449,7 +452,7 @@ func retrieveCountAndRecords(ctx *gin.Context, tx pgx.Tx, countQuery string, cou
 
 	rows, err = tx.Query(ctx, dataQuery, dataQueryArgs...)
 	if err != nil {
-		return 0, nil, schemas.DatabaseError, http.StatusInternalServerError, err
+		return 0, nil, goerrors.DatabaseError, http.StatusInternalServerError, err
 	}
 
 	// Iterate over the rows and create the post DTOs
@@ -463,7 +466,7 @@ func retrieveCountAndRecords(ctx *gin.Context, tx pgx.Tx, countQuery string, cou
 
 		if err := rows.Scan(&post.PostId, &post.Author.Username, &post.Author.Nickname, &post.Author.ProfilePictureURL,
 			&post.Content, &createdAt, &longitude, &latitude, &accuracy); err != nil {
-			return 0, nil, schemas.DatabaseError, http.StatusInternalServerError, err
+			return 0, nil, goerrors.DatabaseError, http.StatusInternalServerError, err
 		}
 
 		if longitude.Valid && latitude.Valid {

@@ -8,11 +8,13 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"github.com/wwi21seb-projekt/server-alpha/internal/schemas"
-	"github.com/wwi21seb-projekt/server-alpha/internal/utils"
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/wwi21seb-projekt/errors-go/goerrors"
+	"github.com/wwi21seb-projekt/server-alpha/internal/schemas"
+	"github.com/wwi21seb-projekt/server-alpha/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -82,14 +84,14 @@ func (jm *JWTManager) JWTMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, &schemas.ErrorDTO{Error: *schemas.Unauthorized})
+			c.AbortWithStatusJSON(http.StatusUnauthorized, &schemas.ErrorDTO{Error: *goerrors.Unauthorized})
 			return
 		}
 		// Validate the JWT token
 		token := authHeader[len("Bearer "):]
 		claims, err := jm.ValidateJWT(token)
 		if err != nil || claims.(jwt.MapClaims)["refresh"] == "true" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, &schemas.ErrorDTO{Error: *schemas.Unauthorized})
+			c.AbortWithStatusJSON(http.StatusUnauthorized, &schemas.ErrorDTO{Error: *goerrors.Unauthorized})
 			return
 		}
 		// Add the claims to the request context
