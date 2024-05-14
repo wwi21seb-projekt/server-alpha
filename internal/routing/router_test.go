@@ -3,12 +3,13 @@ package routing
 import (
 	"crypto/ed25519"
 	"crypto/rand"
-	"github.com/wwi21seb-projekt/server-alpha/internal/managers"
-	"github.com/wwi21seb-projekt/server-alpha/internal/managers/mocks"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
 	"testing"
+
+	"github.com/wwi21seb-projekt/server-alpha/internal/managers"
+	"github.com/wwi21seb-projekt/server-alpha/internal/managers/mocks"
 
 	"github.com/gavv/httpexpect/v2"
 	"github.com/google/uuid"
@@ -102,8 +103,10 @@ func TestUserRegistration(t *testing.T) {
 			http.StatusBadRequest,
 			map[string]interface{}{
 				"error": map[string]interface{}{
-					"code":    "ERR-001",
-					"message": "The request body is invalid. Please check the request body and try again.",
+					"code":        "ERR-001",
+					"http_status": 400,
+					"message":     "The request body is invalid. Please check the request body and try again.",
+					"title":       "BadRequest",
 				},
 			}},
 		{
@@ -112,8 +115,10 @@ func TestUserRegistration(t *testing.T) {
 			http.StatusConflict,
 			map[string]interface{}{
 				"error": map[string]interface{}{
-					"code":    "ERR-002",
-					"message": "The username is already taken. Please try another username.",
+					"code":        "ERR-002",
+					"http_status": 409,
+					"message":     "The username is already taken. Please try another username.",
+					"title":       "UsernameTaken",
 				},
 			},
 		},
@@ -309,8 +314,10 @@ func TestGetSubscriptions(t *testing.T) {
 			http.StatusUnauthorized,
 			map[string]interface{}{
 				"error": map[string]interface{}{
-					"message": "The request is unauthorized. Please login to your account.",
-					"code":    "ERR-014",
+					"code":        "ERR-014",
+					"http_status": 401,
+					"message":     "The request is unauthorized. Please login to your account.",
+					"title":       "Unauthorized",
 				},
 			},
 			[]MockDBCall{},
@@ -323,8 +330,10 @@ func TestGetSubscriptions(t *testing.T) {
 			http.StatusNotFound,
 			map[string]interface{}{
 				"error": map[string]interface{}{
-					"message": "The user was not found. Please check the username and try again.",
-					"code":    "ERR-004",
+					"code":        "ERR-004",
+					"http_status": 404,
+					"message":     "The user was not found. Please check the username and try again.",
+					"title":       "UserNotFound",
 				},
 			},
 			[]MockDBCall{
@@ -413,8 +422,10 @@ func TestDeletePost(t *testing.T) {
 			postId,
 			map[string]interface{}{
 				"error": map[string]interface{}{
-					"message": "The request is unauthorized. Please login to your account.",
-					"code":    "ERR-014",
+					"code":        "ERR-014",
+					"http_status": 401,
+					"message":     "The request is unauthorized. Please login to your account.",
+					"title":       "Unauthorized",
 				},
 			},
 		},
@@ -426,8 +437,10 @@ func TestDeletePost(t *testing.T) {
 			postId,
 			map[string]interface{}{
 				"error": map[string]interface{}{
-					"message": "You can only delete your own posts.",
-					"code":    "ERR-019",
+					"code":        "ERR-019",
+					"http_status": 403,
+					"message":     "You can only delete your own posts.",
+					"title":       "DeletePostForbidden",
 				},
 			},
 		},
@@ -439,8 +452,10 @@ func TestDeletePost(t *testing.T) {
 			postId,
 			map[string]interface{}{
 				"error": map[string]interface{}{
-					"message": "The post was not found. Please check the post ID and try again.",
-					"code":    "ERR-020",
+					"code":        "ERR-020",
+					"http_status": 404,
+					"message":     "The post was not found. Please check the post ID and try again.",
+					"title":       "PostNotFound",
 				},
 			},
 		},
