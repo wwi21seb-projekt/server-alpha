@@ -146,3 +146,17 @@ type MetadataDTO struct {
 	ApiName     string `json:"apiName"`
 	PullRequest string `json:"pullRequest,omitempty"`
 }
+
+// CommentDTO is a struct that represents a comment response
+// CommentId is the ID of the comment
+// PostId is the ID of the post
+// AuthorId is the ID of the author
+// Content is the content of the comment
+// CreatedAt is the timestamp of when the comment was created
+type CommentDTO struct {
+	CommentId    string    `json:"commentId"`
+	PostId       string    `json:"postId"`
+	Author       AuthorDTO `json:"author"`
+	CreationDate string    `json:"creationDate"`
+	Content      string    `json:"content"`
+}

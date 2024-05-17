@@ -62,3 +62,9 @@ type ChangePasswordRequest struct {
 type RefreshTokenRequest struct {
 	RefreshToken string `json:"refreshToken" validate:"required"`
 }
+
+// CreateCommentRequest is a struct that represents a create comment request
+// Content is required and must be less than 128 characters, as well as written in UTF-8
+type CreateCommentRequest struct {
+	Content string `json:"content" validate:"required,max=128,comment_validation"`
+}

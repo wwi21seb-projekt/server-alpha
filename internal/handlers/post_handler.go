@@ -29,6 +29,8 @@ type PostHdl interface {
 	DeletePost(c *gin.Context)
 	QueryPosts(c *gin.Context)
 	HandleGetFeedRequest(c *gin.Context)
+	CreateComment(c *gin.Context)
+	GetComments(c *gin.Context)
 }
 
 // PostHandler provides methods to handle post-related HTTP requests.
@@ -500,4 +502,139 @@ func parseLimitAndPostId(limit, lastPostId string) (string, string) {
 	}
 
 	return limit, lastPostId
+}
+
+func (handler *PostHandler) CreateComment(ctx *gin.Context) {
+	// Begin a new transaction
+	tx := utils.BeginTransaction(ctx, handler.DatabaseManager.GetPool())
+	if tx == nil {
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, errTransaction)
+		return
+	}
+	var err error
+	defer utils.RollbackTransaction(ctx, tx, err)
+
+	// Fetch JWT and Payload from context
+	createCommentRequest := ctx.Value(utils.SanitizedPayloadKey.String()).(*schemas.CreateCommentRequest)
+	claims := ctx.Value(utils.ClaimsKey.String()).(jwt.MapClaims)
+
+	// Create the comment
+	commentId := uuid.New()
+	userId := claims["sub"].(string)
+	postId := ctx.Param(utils.PostIdParamKey)
+	createdAt := time.Now()
+
+	wantedValues := []string{"comment_id", "post_id", "author_id", "created_at", "content"}
+	wantedPlaceholders := []string{"$1", "$2", "$3", "$4", "$5"}
+	queryArgs := []interface{}{commentId, postId, userId, createdAt, createCommentRequest.Content}
+
+	queryString := fmt.Sprintf("INSERT INTO alpha_schema.comments (%s) VALUES(%s)", strings.Join(wantedValues, ","),
+		strings.Join(wantedPlaceholders, ","))
+
+	_, err = tx.Exec(ctx, queryString, queryArgs...)
+	if err != nil {
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Get the author
+	queryString = "SELECT username, nickname FROM alpha_schema.users WHERE user_id = $1"
+	row := tx.QueryRow(ctx, queryString, userId)
+
+	author := &schemas.AuthorDTO{}
+	if err := row.Scan(&author.Username, &author.Nickname); err != nil {
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Commit the transaction
+	if err := utils.CommitTransaction(ctx, tx); err != nil {
+		return
+	}
+
+	// Create the comment DTO
+	comment := &schemas.CommentDTO{
+		CommentId: commentId.String(),
+		PostId:    postId,
+		Author: schemas.AuthorDTO{
+			Username:          author.Username,
+			Nickname:          author.Nickname,
+			ProfilePictureURL: "",
+		},
+		Content:      createCommentRequest.Content,
+		CreationDate: createdAt.Format(time.RFC3339),
+	}
+
+	// Write the response
+	utils.WriteAndLogResponse(ctx, comment, http.StatusCreated)
+}
+
+// GetComments handles requests to get the comments to a post.
+func (handler *PostHandler) GetComments(ctx *gin.Context) {
+	// Extract postId from the URL parameter
+	postId := ctx.Param(utils.PostIdParamKey)
+
+	// Parse pagination parameters
+	offset, limit, err := utils.ParsePaginationParams(ctx)
+	if err != nil {
+		utils.WriteAndLogError(ctx, goerrors.BadRequest, http.StatusBadRequest, err)
+		return
+	}
+
+	// Query to fetch comments related to the postId
+	queryString := `
+        SELECT c.comment_id, c.content, c.created_at, u.username, u.nickname
+        FROM alpha_schema.comments AS c
+        JOIN alpha_schema.users AS u ON c.author_id = u.user_id
+        WHERE c.post_id = $1
+        ORDER BY c.created_at DESC
+        LIMIT $2 OFFSET $3
+    `
+	rows, err := handler.DatabaseManager.GetPool().Query(ctx, queryString, postId, limit, offset)
+	if err != nil {
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+	defer rows.Close()
+
+	comments := make([]schemas.CommentDTO, 0)
+	for rows.Next() {
+		var comment schemas.CommentDTO
+		var author schemas.AuthorDTO
+
+		var commentId uuid.UUID
+		var createdAt time.Time
+
+		if err := rows.Scan(&commentId, &comment.Content, &createdAt, &author.Username, &author.Nickname); err != nil {
+			utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
+			return
+		}
+
+		comment.CommentId = commentId.String()
+		comment.PostId = postId
+		comment.Author = author
+		comment.CreationDate = createdAt.Format(time.RFC3339)
+
+		comments = append(comments, comment)
+	}
+
+	// Query to get the total number of comments for the pagination metadata
+	countQuery := "SELECT COUNT(*) FROM alpha_schema.comments WHERE post_id = $1"
+	var totalComments int
+	row := handler.DatabaseManager.GetPool().QueryRow(ctx, countQuery, postId)
+	if err := row.Scan(&totalComments); err != nil {
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Build and send the paginated response
+	response := map[string]interface{}{
+		"records": comments,
+		"pagination": map[string]int{
+			"offset":  offset,
+			"limit":   limit,
+			"records": totalComments,
+		},
+	}
+	utils.WriteAndLogResponse(ctx, response, http.StatusOK)
 }
