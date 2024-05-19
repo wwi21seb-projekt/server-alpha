@@ -522,64 +522,50 @@ func TestDeletePost(t *testing.T) {
 }
 
 func TestCreateComment(t *testing.T) {
-	// Setup mocks
-	databaseMgrMock, jwtManagerMock, mailMgrMock := setupMocks(t)
+	type CreateCommentRequest struct {
+		Content string `json:"content"`
+	}
 
-	// Initialize router
-	router := InitRouter(databaseMgrMock, mailMgrMock, jwtManagerMock)
-
-	// Create test server
-	server := httptest.NewServer(router)
-	defer server.Close()
-
-	postId := "1d4d2079-0423-4f8e-b063-8cf97553c306"
-	userId := "1752e5cc-77a4-4913-9924-63a439654a8e"
+	userId := "c45f92c4-0d64-4e2e-9939-370ec8a9c61c"
 	username := "testUser"
-	jwtToken, _ := jwtManagerMock.GenerateJWT(userId, username, false)
+	postId := "3d6fa5c8-2e74-4d9c-9df2-5aeb6b59fcd5"
 
-	// Define test cases
 	testCases := []struct {
 		name         string
 		status       int
 		jwtToken     string
-		requestBody  map[string]interface{}
+		userId       string
+		username     string
+		postId       string
+		content      CreateCommentRequest
 		responseBody map[string]interface{}
-		dbSetup      func(pgxmock.PgxPoolIface)
 	}{
 		{
 			"Success",
 			http.StatusCreated,
-			jwtToken,
+			"",
+			userId,
+			username,
+			postId,
+			CreateCommentRequest{Content: "This is a test comment."},
 			map[string]interface{}{
-				"content": "This is a test comment",
-			},
-			map[string]interface{}{
-				"commentId": "",
-				"postId":    postId,
+				"postId": "3d6fa5c8-2e74-4d9c-9df2-5aeb6b59fcd5",
 				"author": map[string]interface{}{
-					"username":          "testUser",
-					"nickname":          "",
+					"nickname":          "Test User",
 					"profilePictureURL": "",
+					"username":          "test_user",
 				},
-				"content":      "This is a test comment",
-				"creationDate": "", // This will be checked later for proper format
-			},
-			func(poolMock pgxmock.PgxPoolIface) {
-				poolMock.ExpectBegin()
-				poolMock.ExpectExec("INSERT INTO alpha_schema.comments").WithArgs(
-					pgxmock.AnyArg(), postId, userId, pgxmock.AnyArg(), "This is a test comment",
-				).WillReturnResult(pgxmock.NewResult("INSERT", 1))
-				poolMock.ExpectQuery("SELECT username, nickname FROM alpha_schema.users WHERE user_id = $1").WithArgs(userId).WillReturnRows(pgxmock.NewRows([]string{"username", "nickname"}).AddRow(username, ""))
-				poolMock.ExpectCommit()
+				"content": "This is a test comment.",
 			},
 		},
 		{
 			"Unauthorized",
 			http.StatusUnauthorized,
-			"invalidToken",
-			map[string]interface{}{
-				"content": "This is a test comment",
-			},
+			"NonsenseToken",
+			userId,
+			username,
+			postId,
+			CreateCommentRequest{Content: "This is a test comment."},
 			map[string]interface{}{
 				"error": map[string]interface{}{
 					"code":        "ERR-014",
@@ -588,15 +574,15 @@ func TestCreateComment(t *testing.T) {
 					"title":       "Unauthorized",
 				},
 			},
-			func(poolMock pgxmock.PgxPoolIface) {},
 		},
 		{
-			"NotFound",
+			"Not Found",
 			http.StatusNotFound,
-			jwtToken,
-			map[string]interface{}{
-				"content": "This is a test comment",
-			},
+			"",
+			userId,
+			username,
+			postId,
+			CreateCommentRequest{Content: "This is a test comment."},
 			map[string]interface{}{
 				"error": map[string]interface{}{
 					"code":        "ERR-020",
@@ -605,19 +591,15 @@ func TestCreateComment(t *testing.T) {
 					"title":       "PostNotFound",
 				},
 			},
-			func(poolMock pgxmock.PgxPoolIface) {
-				poolMock.ExpectBegin()
-				poolMock.ExpectExec("INSERT INTO alpha_schema.comments").WithArgs(
-					pgxmock.AnyArg(), postId, userId, pgxmock.AnyArg(), "This is a test comment",
-				).WillReturnError(fmt.Errorf("post not found"))
-				poolMock.ExpectRollback()
-			},
 		},
 		{
-			"BadRequest",
+			"Bad Request",
 			http.StatusBadRequest,
-			jwtToken,
-			map[string]interface{}{},
+			"",
+			userId,
+			username,
+			postId,
+			CreateCommentRequest{Content: "This comment is too long. This comment is too long. This comment is too long. This comment is too long. This comment is too long. This comment is too long. This comment is too long. This comment is too long."},
 			map[string]interface{}{
 				"error": map[string]interface{}{
 					"code":        "ERR-001",
@@ -626,31 +608,58 @@ func TestCreateComment(t *testing.T) {
 					"title":       "BadRequest",
 				},
 			},
-			func(poolMock pgxmock.PgxPoolIface) {},
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			poolMock := databaseMgrMock.GetPool().(pgxmock.PgxPoolIface)
-			tc.dbSetup(poolMock)
 
-			// Create request and get response
-			expect := httpexpect.Default(t, server.URL)
-			request := expect.POST(fmt.Sprintf("/api/posts/%s/comments", postId)).WithHeader("Authorization", "Bearer "+tc.jwtToken).WithJSON(tc.requestBody)
-			response := request.Expect().Status(tc.status)
+			databaseMgrMock, jwtManager, mailMgrMock := setupMocks(t)
 
-			if tc.status == http.StatusCreated {
-				responseBody := response.JSON().Object()
-				responseBody.Value("content").Equal(tc.requestBody["content"])
-				responseBody.Value("postId").Equal(postId)
-				responseBody.Value("author").Object().Value("username").Equal(username)
-				responseBody.Value("creationDate").String().NotEmpty()
-			} else {
-				response.JSON().IsEqual(tc.responseBody)
+			router := InitRouter(databaseMgrMock, mailMgrMock, jwtManager)
+
+			server := httptest.NewServer(router)
+			defer server.Close()
+
+			// Generate JWT token if not already set
+			if tc.jwtToken == "" {
+				tc.jwtToken, _ = jwtManager.GenerateJWT(tc.userId, tc.username, false)
 			}
 
-			// Check if all expectations were met
+			poolMock := databaseMgrMock.GetPool().(pgxmock.PgxPoolIface)
+
+			switch tc.name {
+			case "Success":
+				poolMock.ExpectBegin()
+				// Expect the SELECT COUNT(*) query to check if the post exists
+				poolMock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM alpha_schema.posts WHERE post_id = \\$1").
+					WithArgs(tc.postId).
+					WillReturnRows(pgxmock.NewRows([]string{"count"}).AddRow(1))
+
+				// Expect the insert into comments table
+				poolMock.ExpectExec("INSERT INTO alpha_schema.comments").
+					WithArgs(pgxmock.AnyArg(), tc.postId, tc.userId, pgxmock.AnyArg(), tc.content.Content).
+					WillReturnResult(pgxmock.NewResult("INSERT", 1))
+
+				// Expect the select from users table
+				poolMock.ExpectQuery("SELECT username, nickname FROM alpha_schema.users WHERE user_id = \\$1").
+					WithArgs(tc.userId).
+					WillReturnRows(pgxmock.NewRows([]string{"username", "nickname"}).AddRow("test_user", "Test User"))
+
+				poolMock.ExpectCommit()
+			case "Not Found":
+				poolMock.ExpectBegin()
+				// Expect the SELECT COUNT(*) query to check if the post exists
+				poolMock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM alpha_schema.posts WHERE post_id = \\$1").
+					WithArgs(tc.postId).
+					WillReturnRows(pgxmock.NewRows([]string{"count"}).AddRow(0))
+			}
+
+			expect := httpexpect.Default(t, server.URL)
+			request := expect.POST(fmt.Sprintf("/api/posts/%s/comments", tc.postId)).WithJSON(tc.content).WithHeader("Authorization", "Bearer "+tc.jwtToken)
+			response := request.Expect().Status(tc.status)
+			response.JSON().IsEqual(tc.responseBody)
+
 			if err := poolMock.ExpectationsWereMet(); err != nil {
 				t.Errorf("there were unfulfilled expectations: %s", err)
 			}

@@ -160,3 +160,14 @@ type CommentDTO struct {
 	CreationDate string    `json:"creationDate"`
 	Content      string    `json:"content"`
 }
+
+// CommentCreationDTO is a struct that represents a response
+// indicating a comment has been created
+// PostId is the ID of the post
+// AuthorId is the ID of the author
+// Content is the content of the comment
+type CommentCreationDTO struct {
+	PostId  string    `json:"postId"`
+	Author  AuthorDTO `json:"author"`
+	Content string    `json:"content"`
+}

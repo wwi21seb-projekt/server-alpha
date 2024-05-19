@@ -524,11 +524,22 @@ func (handler *PostHandler) CreateComment(ctx *gin.Context) {
 	postId := ctx.Param(utils.PostIdParamKey)
 	createdAt := time.Now()
 
+	// Check if the post exists
+	var postCount int
+
+	queryString := "SELECT COUNT(*) FROM alpha_schema.posts WHERE post_id = $1"
+	tx.QueryRow(ctx, queryString, postId).Scan(&postCount)
+	fmt.Println("du dummer hurensohn")
+	fmt.Println(postCount)
+	if postCount == 0 {
+		utils.WriteAndLogError(ctx, goerrors.PostNotFound, http.StatusNotFound, errors.New("post not found"))
+		return
+	}
+
 	wantedValues := []string{"comment_id", "post_id", "author_id", "created_at", "content"}
 	wantedPlaceholders := []string{"$1", "$2", "$3", "$4", "$5"}
 	queryArgs := []interface{}{commentId, postId, userId, createdAt, createCommentRequest.Content}
-
-	queryString := fmt.Sprintf("INSERT INTO alpha_schema.comments (%s) VALUES(%s)", strings.Join(wantedValues, ","),
+	queryString = fmt.Sprintf("INSERT INTO alpha_schema.comments (%s) VALUES(%s)", strings.Join(wantedValues, ","),
 		strings.Join(wantedPlaceholders, ","))
 
 	_, err = tx.Exec(ctx, queryString, queryArgs...)
@@ -553,16 +564,14 @@ func (handler *PostHandler) CreateComment(ctx *gin.Context) {
 	}
 
 	// Create the comment DTO
-	comment := &schemas.CommentDTO{
-		CommentId: commentId.String(),
-		PostId:    postId,
+	comment := &schemas.CommentCreationDTO{
+		PostId: postId,
 		Author: schemas.AuthorDTO{
 			Username:          author.Username,
 			Nickname:          author.Nickname,
 			ProfilePictureURL: "",
 		},
-		Content:      createCommentRequest.Content,
-		CreationDate: createdAt.Format(time.RFC3339),
+		Content: createCommentRequest.Content,
 	}
 
 	// Write the response

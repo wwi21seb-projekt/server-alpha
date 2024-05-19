@@ -108,7 +108,7 @@ func NewJWTManagerFromFile() (JWTMgr, error) {
 
 	keysDir := os.Getenv("KEYS_DIR")
 	if keysDir == "" {
-		keysDir = "./keys" // Default keys directory
+		keysDir = ".keys" // Default keys directory
 	}
 	privateKeyPath := keysDir + "/private_key.pem"
 	publicKeyPath := keysDir + "/public_key.pem"
