@@ -155,7 +155,6 @@ type MetadataDTO struct {
 // CreatedAt is the timestamp of when the comment was created
 type CommentDTO struct {
 	CommentId    string    `json:"commentId"`
-	PostId       string    `json:"postId"`
 	Author       AuthorDTO `json:"author"`
 	CreationDate string    `json:"creationDate"`
 	Content      string    `json:"content"`

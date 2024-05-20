@@ -578,6 +578,15 @@ func (handler *PostHandler) CreateComment(ctx *gin.Context) {
 
 // GetComments handles requests to get the comments to a post.
 func (handler *PostHandler) GetComments(ctx *gin.Context) {
+
+	tx := utils.BeginTransaction(ctx, handler.DatabaseManager.GetPool())
+	if tx == nil {
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, errTransaction)
+		return
+	}
+	var err error
+	defer utils.RollbackTransaction(ctx, tx, err)
+
 	// Extract postId from the URL parameter
 	postId := ctx.Param(utils.PostIdParamKey)
 
@@ -588,8 +597,16 @@ func (handler *PostHandler) GetComments(ctx *gin.Context) {
 		return
 	}
 
+	var postCount int
+	queryString := "SELECT COUNT(*) FROM alpha_schema.posts WHERE post_id = $1"
+	tx.QueryRow(ctx, queryString, postId).Scan(&postCount)
+	if postCount == 0 {
+		utils.WriteAndLogError(ctx, goerrors.PostNotFound, http.StatusNotFound, errors.New("post not found"))
+		return
+	}
+
 	// Query to fetch comments related to the postId
-	queryString := `
+	queryString = `
         SELECT c.comment_id, c.content, c.created_at, u.username, u.nickname
         FROM alpha_schema.comments AS c
         JOIN alpha_schema.users AS u ON c.author_id = u.user_id
@@ -618,29 +635,18 @@ func (handler *PostHandler) GetComments(ctx *gin.Context) {
 		}
 
 		comment.CommentId = commentId.String()
-		comment.PostId = postId
 		comment.Author = author
 		comment.CreationDate = createdAt.Format(time.RFC3339)
 
 		comments = append(comments, comment)
 	}
 
-	// Query to get the total number of comments for the pagination metadata
-	countQuery := "SELECT COUNT(*) FROM alpha_schema.comments WHERE post_id = $1"
-	var totalComments int
-	row := handler.DatabaseManager.GetPool().QueryRow(ctx, countQuery, postId)
-	if err := row.Scan(&totalComments); err != nil {
-		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
-		return
-	}
-
 	// Build and send the paginated response
 	response := map[string]interface{}{
 		"records": comments,
 		"pagination": map[string]int{
-			"offset":  offset,
-			"limit":   limit,
-			"records": totalComments,
+			"offset": offset,
+			"limit":  limit,
 		},
 	}
 	utils.WriteAndLogResponse(ctx, response, http.StatusOK)
