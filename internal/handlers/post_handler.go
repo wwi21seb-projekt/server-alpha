@@ -529,8 +529,6 @@ func (handler *PostHandler) CreateComment(ctx *gin.Context) {
 
 	queryString := "SELECT COUNT(*) FROM alpha_schema.posts WHERE post_id = $1"
 	tx.QueryRow(ctx, queryString, postId).Scan(&postCount)
-	fmt.Println("du dummer hurensohn")
-	fmt.Println(postCount)
 	if postCount == 0 {
 		utils.WriteAndLogError(ctx, goerrors.PostNotFound, http.StatusNotFound, errors.New("post not found"))
 		return

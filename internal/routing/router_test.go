@@ -12,6 +12,7 @@ import (
 
 	"github.com/wwi21seb-projekt/server-alpha/internal/managers"
 	"github.com/wwi21seb-projekt/server-alpha/internal/managers/mocks"
+	"github.com/wwi21seb-projekt/server-alpha/internal/schemas"
 
 	"github.com/gavv/httpexpect/v2"
 	"github.com/google/uuid"
@@ -522,10 +523,6 @@ func TestDeletePost(t *testing.T) {
 }
 
 func TestCreateComment(t *testing.T) {
-	type CreateCommentRequest struct {
-		Content string `json:"content"`
-	}
-
 	userId := "c45f92c4-0d64-4e2e-9939-370ec8a9c61c"
 	username := "testUser"
 	postId := "3d6fa5c8-2e74-4d9c-9df2-5aeb6b59fcd5"
@@ -537,7 +534,7 @@ func TestCreateComment(t *testing.T) {
 		userId       string
 		username     string
 		postId       string
-		content      CreateCommentRequest
+		content      schemas.CreateCommentRequest
 		responseBody map[string]interface{}
 	}{
 		{
@@ -547,7 +544,7 @@ func TestCreateComment(t *testing.T) {
 			userId,
 			username,
 			postId,
-			CreateCommentRequest{Content: "This is a test comment."},
+			schemas.CreateCommentRequest{Content: "This is a test comment."},
 			map[string]interface{}{
 				"postId": "3d6fa5c8-2e74-4d9c-9df2-5aeb6b59fcd5",
 				"author": map[string]interface{}{
@@ -565,7 +562,7 @@ func TestCreateComment(t *testing.T) {
 			userId,
 			username,
 			postId,
-			CreateCommentRequest{Content: "This is a test comment."},
+			schemas.CreateCommentRequest{Content: "This is a test comment."},
 			map[string]interface{}{
 				"error": map[string]interface{}{
 					"code":        "ERR-014",
@@ -582,7 +579,7 @@ func TestCreateComment(t *testing.T) {
 			userId,
 			username,
 			postId,
-			CreateCommentRequest{Content: "This is a test comment."},
+			schemas.CreateCommentRequest{Content: "This is a test comment."},
 			map[string]interface{}{
 				"error": map[string]interface{}{
 					"code":        "ERR-020",
@@ -599,7 +596,7 @@ func TestCreateComment(t *testing.T) {
 			userId,
 			username,
 			postId,
-			CreateCommentRequest{Content: "This comment is too long. This comment is too long. This comment is too long. This comment is too long. This comment is too long. This comment is too long. This comment is too long. This comment is too long."},
+			schemas.CreateCommentRequest{Content: "This comment is too long. This comment is too long. This comment is too long. This comment is too long. This comment is too long. This comment is too long. This comment is too long. This comment is too long."},
 			map[string]interface{}{
 				"error": map[string]interface{}{
 					"code":        "ERR-001",
