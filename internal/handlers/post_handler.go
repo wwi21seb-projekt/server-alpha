@@ -260,12 +260,12 @@ func (handler *PostHandler) QueryPosts(ctx *gin.Context) {
 	placeholder := ""
 	if lastPostId == "" {
 		queryString += "ORDER BY created_at DESC LIMIT $2"
-		placeholder = "3"
+		placeholder = "$3"
 	} else {
 		queryString += "AND posts.created_at < (SELECT created_at FROM alpha_schema.posts WHERE post_id = $2) " +
 			"ORDER BY created_at DESC LIMIT $3"
 		dataQueryArgs = append(dataQueryArgs, lastPostId)
-		placeholder = "4"
+		placeholder = "$4"
 	}
 	dataQueryArgs = append(dataQueryArgs, limit)
 	claims := ctx.Value(utils.ClaimsKey.String()).(jwt.MapClaims)
