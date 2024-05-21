@@ -64,6 +64,8 @@ type PostDTO struct {
 	CreationDate string       `json:"creationDate"`
 	Content      string       `json:"content"`
 	Location     *LocationDTO `json:"location,omitempty"`
+	Likes        int          `json:"likes"`
+	Liked        bool         `json:"liked"`
 }
 
 // SubscriptionDTO is a struct that represents a subscription response

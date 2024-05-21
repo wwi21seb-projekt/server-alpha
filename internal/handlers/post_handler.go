@@ -16,7 +16,9 @@ import (
 	"github.com/wwi21seb-projekt/server-alpha/internal/schemas"
 	"github.com/wwi21seb-projekt/server-alpha/internal/utils"
 
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -29,6 +31,8 @@ type PostHdl interface {
 	DeletePost(c *gin.Context)
 	QueryPosts(c *gin.Context)
 	HandleGetFeedRequest(c *gin.Context)
+	CreateLike(c *gin.Context)
+	DeleteLike(c *gin.Context)
 }
 
 // PostHandler provides methods to handle post-related HTTP requests.
@@ -245,8 +249,9 @@ func (handler *PostHandler) QueryPosts(ctx *gin.Context) {
 	queryString := "SELECT %s " +
 		"FROM alpha_schema.posts " +
 		"INNER JOIN alpha_schema.users ON author_id = user_id " +
-		"INNER JOIN alpha_schema.many_posts_has_many_hashtags ON post_id = post_id_posts " +
+		"INNER JOIN alpha_schema.many_posts_has_many_hashtags ON posts.post_id = post_id_posts " +
 		"INNER JOIN alpha_schema.hashtags ON hashtag_id = hashtag_id_hashtags " +
+		"LEFT OUTER JOIN alpha_schema.likes ON posts.post_id = likes.post_id" +
 		"WHERE hashtags.content LIKE $1 "
 
 	dataQueryArgs = append(dataQueryArgs, "%"+q+"%")
@@ -260,10 +265,19 @@ func (handler *PostHandler) QueryPosts(ctx *gin.Context) {
 			"ORDER BY created_at DESC LIMIT $3"
 		dataQueryArgs = append(dataQueryArgs, lastPostId)
 	}
-
 	dataQueryArgs = append(dataQueryArgs, limit)
-	dataQueryString := fmt.Sprintf(queryString, "DISTINCT posts.post_id, username, nickname, profile_picture_url, "+
-		"posts.content, posts.created_at, posts.longitude, posts.latitude, posts.accuracy")
+	claims := ctx.Value(utils.ClaimsKey.String()).(jwt.MapClaims)
+	userId := claims["sub"].(string)
+	dataQueryString := fmt.Sprintf(queryString, `DISTINCT posts.post_id, username, nickname, profile_picture_url,
+		posts.content, COUNT(likes.post_id) AS likes, CASE
+		WHEN EXISTS (
+			SELECT 1
+			FROM alpha_schema.likes
+			WHERE likes.user_id = $4
+			AND likes.post_id = posts.post_id
+		) THEN TRUE ELSE FALSE
+		END AS liked, posts.created_at, posts.longitude, posts.latitude, posts.accuracy`)
+	dataQueryArgs = append(dataQueryArgs, userId)
 
 	// Get count and posts
 	count, posts, customErr, statusCode, err := retrieveCountAndRecords(ctx, tx, countQueryString, countQueryArgs,
@@ -396,11 +410,20 @@ func retrieveFeed(ctx *gin.Context, tx pgx.Tx, publicFeedWanted bool,
     					WHERE subscriptions.subscriber_id` + fmt.Sprintf(" = $%d", currentCountQueryIndex)
 		currentCountQueryIndex++
 		dataQuery = `
-			SELECT post_id, username, nickname, profile_picture_url, content, posts.created_at, posts.longitude, posts.latitude, posts.accuracy 
+			SELECT posts.post_id, username, nickname, profile_picture_url, content, COUNT(likes.post_id) AS likes, CASE
+			WHEN EXISTS (
+				SELECT 1
+				FROM alpha_schema.likes
+				WHERE likes.user_id =` + fmt.Sprintf(" $%d", currentDataQueryIndex) + `
+				AND likes.post_id = posts.post_id
+			) THEN TRUE ELSE FALSE
+			END AS liked, posts.created_at, posts.longitude, posts.latitude, posts.accuracy 
 			FROM alpha_schema.posts
 			INNER JOIN alpha_schema.subscriptions ON posts.author_id = subscriptions.subscribee_id
-			INNER JOIN alpha_schema.users ON posts.author_id = users.user_id				
-			WHERE subscriptions.subscriber_id` + fmt.Sprintf(" = $%d", currentDataQueryIndex)
+			INNER JOIN alpha_schema.users ON posts.author_id = users.user_id
+			LEFT OUTER JOIN alpha_schema.likes ON posts.post_id = likes.post_id			
+			WHERE subscriptions.subscriber_id` + fmt.Sprintf(" = $%d", currentDataQueryIndex) + `
+			GROUP BY posts.post_id, username, nickname, profile_picture_url`
 		currentDataQueryIndex++
 
 		countQueryArgs = append(countQueryArgs, userId)
@@ -408,9 +431,11 @@ func retrieveFeed(ctx *gin.Context, tx pgx.Tx, publicFeedWanted bool,
 	} else {
 		countQuery = "SELECT COUNT(*) FROM alpha_schema.posts"
 		dataQuery = `
-			SELECT post_id, username, nickname, profile_picture_url, content, posts.created_at, posts.longitude, posts.latitude, posts.accuracy 
-			FROM alpha_schema.posts
-			INNER JOIN alpha_schema.users ON author_id = user_id`
+			SELECT posts.post_id, username, nickname, profile_picture_url, content, COUNT(likes.post_id) AS likes, FALSE AS liked, posts.created_at, posts.longitude, posts.latitude, posts.accuracy 
+			FROM alpha_schema.posts 
+			INNER JOIN alpha_schema.users ON author_id = user_id
+			LEFT OUTER JOIN alpha_schema.likes ON posts.post_id = likes.post_id
+			GROUP BY posts.post_id, username, nickname, profile_picture_url`
 	}
 
 	// Append additional clauses to the data query based on the lastPostId
@@ -465,7 +490,7 @@ func retrieveCountAndRecords(ctx *gin.Context, tx pgx.Tx, countQuery string, cou
 		var accuracy pgtype.Int4
 
 		if err := rows.Scan(&post.PostId, &post.Author.Username, &post.Author.Nickname, &post.Author.ProfilePictureURL,
-			&post.Content, &createdAt, &longitude, &latitude, &accuracy); err != nil {
+			&post.Content, &post.Likes, &post.Liked, &createdAt, &longitude, &latitude, &accuracy); err != nil {
 			return 0, nil, goerrors.DatabaseError, http.StatusInternalServerError, err
 		}
 
@@ -500,4 +525,92 @@ func parseLimitAndPostId(limit, lastPostId string) (string, string) {
 	}
 
 	return limit, lastPostId
+}
+
+func (handler *PostHandler) CreateLike(ctx *gin.Context) {
+	var err error
+	tx := utils.BeginTransaction(ctx, handler.DatabaseManager.GetPool())
+	if tx == nil {
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, errTransaction)
+		return
+	}
+	defer utils.RollbackTransaction(ctx, tx, err)
+
+	// Get the post ID from the URL
+	postId := ctx.Param(utils.PostIdParamKey)
+	// Get the user ID from the JWT token
+	claims := ctx.Value(utils.ClaimsKey.String()).(jwt.MapClaims)
+	userId := claims["sub"].(string)
+
+	queryString := `INSERT INTO alpha_schema.likes (user_id, post_id, liked_at) VALUES($1,$2,$3)
+					ON CONFLICT (user_id, post_id) DO NOTHING;`
+
+	result, err := tx.Exec(ctx, queryString, userId, postId, time.Now())
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgerrcode.IsIntegrityConstraintViolation(pgErr.Code) {
+		utils.WriteAndLogError(ctx, goerrors.PostNotFound, http.StatusNotFound, err)
+		return
+	}
+
+	if err != nil {
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+
+	if result.RowsAffected() == 0 {
+		utils.WriteAndLogResponse(ctx, goerrors.AlreadyLiked, http.StatusConflict)
+		return
+	}
+	// Commit the transaction
+	if err := utils.CommitTransaction(ctx, tx); err != nil {
+		return
+	}
+
+	utils.WriteAndLogResponse(ctx, nil, http.StatusNoContent)
+}
+
+func (handler *PostHandler) DeleteLike(ctx *gin.Context) {
+
+	var err error
+	tx := utils.BeginTransaction(ctx, handler.DatabaseManager.GetPool())
+	if tx == nil {
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, errTransaction)
+		return
+	}
+	defer utils.RollbackTransaction(ctx, tx, err)
+
+	// Get the post ID from the URL
+	postId := ctx.Param(utils.PostIdParamKey)
+	// Get the user ID from the JWT token
+	claims := ctx.Value(utils.ClaimsKey.String()).(jwt.MapClaims)
+	userId := claims["sub"].(string)
+
+	queryString := `SELECT EXISTS(SELECT 1 FROM alpha_schema.posts WHERE post_id = $1) AS post_exists, 
+                       EXISTS(SELECT 1 FROM alpha_schema.likes WHERE post_id = $1 AND user_id = $2) AS like_exists;`
+
+	var postExists, likeExists bool
+	err = tx.QueryRow(ctx, queryString, postId, userId).Scan(&postExists, &likeExists)
+	if err != nil {
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+	if !postExists {
+		utils.WriteAndLogResponse(ctx, goerrors.PostNotFound, http.StatusNotFound)
+		return
+	}
+	if !likeExists {
+		utils.WriteAndLogResponse(ctx, goerrors.NotLiked, http.StatusConflict)
+		return
+	}
+	queryString = `DELETE FROM alpha_schema.likes WHERE post_id = $1 AND user_id = $2`
+	if _, err = tx.Exec(ctx, queryString, postId, userId); err != nil {
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
+		return
+	}
+	// Commit the transaction
+	if err := utils.CommitTransaction(ctx, tx); err != nil {
+		return
+	}
+
+	utils.WriteAndLogResponse(ctx, nil, http.StatusNoContent)
 }

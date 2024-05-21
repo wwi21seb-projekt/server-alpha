@@ -1,14 +1,15 @@
 package routing
 
 import (
+	"net/http"
+	"os"
+	"time"
+
 	"github.com/wwi21seb-projekt/server-alpha/internal/handlers"
 	"github.com/wwi21seb-projekt/server-alpha/internal/managers"
 	"github.com/wwi21seb-projekt/server-alpha/internal/middleware"
 	"github.com/wwi21seb-projekt/server-alpha/internal/schemas"
 	"github.com/wwi21seb-projekt/server-alpha/internal/utils"
-	"net/http"
-	"os"
-	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -147,6 +148,8 @@ func postRoutes(postRouter *gin.RouterGroup, postHdl handlers.PostHdl, jwtMgr ma
 	postRouter.POST("", middleware.ValidateAndSanitizeStruct(&schemas.CreatePostRequest{}), postHdl.CreatePost)
 	postRouter.GET("", postHdl.QueryPosts)
 	postRouter.DELETE("/:postId", postHdl.DeletePost)
+	postRouter.POST("/:postId/likes", postHdl.CreateLike)
+	postRouter.DELETE("/:postId/likes", postHdl.DeleteLike)
 }
 
 func subscriptionsRoutes(subscriptionsRouter *gin.RouterGroup, subscriptionHdl handlers.SubscriptionHdl) {
