@@ -705,12 +705,22 @@ func (handler *UserHandler) RetrieveUserPosts(ctx *gin.Context) {
 		utils.WriteAndLogError(ctx, goerrors.BadRequest, http.StatusBadRequest, err)
 		return
 	}
+	claims := ctx.Value(utils.ClaimsKey.String()).(jwt.MapClaims)
+	userId := claims["sub"].(string)
 
 	// Retrieve posts from database
-	queryString := "SELECT p.post_id, p.content, p.created_at, p.longitude, p.latitude, p.accuracy " +
-		"FROM alpha_schema.posts p JOIN alpha_schema.users u on p.author_id = u.user_id " +
-		"WHERE u.username = $1 ORDER BY p.created_at DESC"
-	rows, err := handler.DatabaseManager.GetPool().Query(ctx, queryString, username)
+	queryString := `SELECT p.post_id, p.content,COUNT(likes.post_id) AS likes, CASE
+					WHEN EXISTS (
+						SELECT 1
+						FROM alpha_schema.likes
+						WHERE likes.user_id = $1
+						AND likes.post_id = p.post_id
+					) THEN TRUE ELSE FALSE
+					END AS liked, p.created_at, p.longitude, p.latitude, p.accuracy  
+					FROM alpha_schema.posts p JOIN alpha_schema.users u on p.author_id = u.user_id  
+					LEFT OUTER JOIN alpha_schema.likes ON posts.post_id = likes.post_id
+					WHERE u.username = $2 ORDER BY p.created_at DESC `
+	rows, err := handler.DatabaseManager.GetPool().Query(ctx, queryString, userId, username)
 	if err != nil {
 		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return
@@ -725,7 +735,7 @@ func (handler *UserHandler) RetrieveUserPosts(ctx *gin.Context) {
 
 	for rows.Next() {
 		post := schemas.PostDTO{}
-		if err := rows.Scan(&post.PostId, &post.Content, &createdAt, &longitude, &latitude, &accuracy); err != nil {
+		if err := rows.Scan(&post.PostId, &post.Content, &post.Likes, &post.Liked, &createdAt, &longitude, &latitude, &accuracy); err != nil {
 			utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 			return
 		}
