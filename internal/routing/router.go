@@ -134,10 +134,10 @@ func userRoutes(userRouter *gin.RouterGroup, userHdl handlers.UserHdl, jwtMgr ma
 	userRouter.POST("/refresh", middleware.ValidateAndSanitizeStruct(&schemas.RefreshTokenRequest{}), userHdl.RefreshToken)
 	userRouter.POST("/:username/activate", middleware.ValidateAndSanitizeStruct(&schemas.ActivationRequest{}), userHdl.ActivateUser)
 	userRouter.DELETE("/:username/activate", userHdl.ResendToken)
-	userRouter.GET("/:username/feed", userHdl.RetrieveUserPosts)
 	// The following routes require the user to be authenticated
 	userRouter.Use(jwtMgr.JWTMiddleware())
 	userRouter.GET("/:username", userHdl.HandleGetUserRequest)
+	userRouter.GET("/:username/feed", userHdl.RetrieveUserPosts)
 	userRouter.GET("", userHdl.SearchUsers)
 	userRouter.PATCH("", middleware.ValidateAndSanitizeStruct(&schemas.ChangePasswordRequest{}), userHdl.ChangePassword)
 	userRouter.PUT("", middleware.ValidateAndSanitizeStruct(&schemas.ChangeTrivialInformationRequest{}), userHdl.ChangeTrivialInformation)

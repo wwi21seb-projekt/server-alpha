@@ -709,17 +709,19 @@ func (handler *UserHandler) RetrieveUserPosts(ctx *gin.Context) {
 	userId := claims["sub"].(string)
 
 	// Retrieve posts from database
-	queryString := `SELECT p.post_id, p.content,COUNT(likes.post_id) AS likes, CASE
-					WHEN EXISTS (
+	queryString := `SELECT posts.post_id, posts.content, COUNT(likes.post_id) AS likes, 
+					CASE WHEN EXISTS (
 						SELECT 1
 						FROM alpha_schema.likes
 						WHERE likes.user_id = $1
-						AND likes.post_id = p.post_id
+						AND likes.post_id = posts.post_id
 					) THEN TRUE ELSE FALSE
-					END AS liked, p.created_at, p.longitude, p.latitude, p.accuracy  
-					FROM alpha_schema.posts p JOIN alpha_schema.users u on p.author_id = u.user_id  
+					END AS liked, posts.created_at, posts.longitude, posts.latitude, posts.accuracy  
+					FROM alpha_schema.posts JOIN alpha_schema.users u on posts.author_id = u.user_id  
 					LEFT OUTER JOIN alpha_schema.likes ON posts.post_id = likes.post_id
-					WHERE u.username = $2 ORDER BY p.created_at DESC `
+					WHERE u.username = $2 
+					GROUP BY posts.post_id, username, nickname, profile_picture_url
+					ORDER BY posts.created_at DESC `
 	rows, err := handler.DatabaseManager.GetPool().Query(ctx, queryString, userId, username)
 	if err != nil {
 		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
