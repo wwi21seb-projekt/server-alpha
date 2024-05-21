@@ -2,7 +2,6 @@ package validators
 
 import (
 	"fmt"
-	"github.com/wwi21seb-projekt/server-alpha/internal/schemas"
 	"reflect"
 	"regexp"
 	"strings"
@@ -13,6 +12,7 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/microcosm-cc/bluemonday"
 	"github.com/truemail-rb/truemail-go"
+	"github.com/wwi21seb-projekt/server-alpha/internal/schemas"
 )
 
 var instance *Validator
@@ -146,13 +146,14 @@ func postValidation(fl validator.FieldLevel) bool {
 // locationValidation defines the validation logic for a location.
 // It ensures that the longitude, latitude, and accuracy fields contain valid values.
 func locationValidation(fl validator.FieldLevel) bool {
-	// Get the location struct from the field
+	// Get the location from the field
 	location := fl.Field().Interface().(schemas.LocationDTO)
 
 	// If location is empty, return true since it is not required
 	if location == (schemas.LocationDTO{}) {
 		return true
 	}
+
 	// Check if the longitude is valid
 	if location.Longitude < -180 || location.Longitude > 180 {
 		return false

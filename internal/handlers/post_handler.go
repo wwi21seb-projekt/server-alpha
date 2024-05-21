@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	sq "github.com/Masterminds/squirrel"
 	"github.com/gin-gonic/gin"
 	"github.com/wwi21seb-projekt/errors-go/goerrors"
 	"github.com/wwi21seb-projekt/server-alpha/internal/managers"
@@ -44,6 +45,7 @@ type PostHandler struct {
 var hashtagRegex = regexp.MustCompile(`#\w+`)
 var errTransaction = errors.New("error beginning transaction")
 var bearerPrefix = "Bearer "
+var psql = sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
 
 // NewPostHandler returns a new PostHandler with the provided managers and validator.
 func NewPostHandler(databaseManager *managers.DatabaseMgr, jwtManager *managers.JWTMgr) PostHdl {
@@ -53,11 +55,7 @@ func NewPostHandler(databaseManager *managers.DatabaseMgr, jwtManager *managers.
 	}
 }
 
-// CreatePost handles the creation of a new post. It begins a new transaction, validates the request payload,
-// extracts the user ID from JWT token, inserts the post data into the database, handles hashtags,
-// and commits the transaction.
 func (handler *PostHandler) CreatePost(ctx *gin.Context) {
-	// Begin a new transaction
 	tx := utils.BeginTransaction(ctx, handler.DatabaseManager.GetPool())
 	if tx == nil {
 		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, errTransaction)
@@ -66,35 +64,82 @@ func (handler *PostHandler) CreatePost(ctx *gin.Context) {
 	var err error
 	defer utils.RollbackTransaction(ctx, tx, err)
 
-	// Fetch JWT and Payload from context
 	createPostRequest := ctx.Value(utils.SanitizedPayloadKey.String()).(*schemas.CreatePostRequest)
 	claims := ctx.Value(utils.ClaimsKey.String()).(jwt.MapClaims)
+	userId := claims["sub"].(string)
+	repostUserId := ""
+	postDto := &schemas.PostDTO{}
+
+	// Check if this is a repost
+	if createPostRequest.RepostedPostId != "" {
+		postDto.Repost = &schemas.RepostDTO{}
+		postDto.Repost.Author = schemas.AuthorDTO{}
+
+		var repostContent pgtype.Text
+		var longitute, latitude pgtype.Float8
+		var accuracy pgtype.Int4
+		var createdAt pgtype.Timestamptz
+
+		repostedPost := psql.Select("content", "posts.created_at", "users.user_id", "users.username", "users.nickname", "users.profile_picture_url", "longitude",
+			"latitude", "accuracy", "repost_content").From("alpha_schema.posts").InnerJoin("alpha_schema.users ON author_id = user_id").
+			Where("post_id = ?", createPostRequest.RepostedPostId)
+		sql, args, _ := repostedPost.ToSql()
+		row := tx.QueryRow(ctx, sql, args...)
+		err := row.Scan(&postDto.Repost.Content, &createdAt, &repostUserId, &postDto.Repost.Author.Username,
+			&postDto.Repost.Author.Nickname, &postDto.Repost.Author.ProfilePictureURL, &longitute, &latitude, &accuracy, &repostContent)
+
+		// If the post is a repost of a repost, we deny the request
+		if repostContent.Valid {
+			utils.WriteAndLogError(ctx, goerrors.BadRequest, http.StatusBadRequest, errors.New("repost of repost"))
+			return
+		}
+
+		// Check for general errors
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				utils.WriteAndLogError(ctx, goerrors.PostNotFound, http.StatusNotFound, errors.New("post not found"))
+				return
+			}
+
+			utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
+			return
+		}
+
+		if longitute.Valid && latitude.Valid && accuracy.Valid {
+			postDto.Repost.Location = &schemas.LocationDTO{}
+			postDto.Repost.Location.Longitude = longitute.Float64
+			postDto.Repost.Location.Latitude = latitude.Float64
+			postDto.Repost.Location.Accuracy = accuracy.Int32
+		}
+
+		postDto.Repost.CreationDate = createdAt.Time.Format(time.RFC3339)
+	}
 
 	// Create the post
-	userId := claims["sub"].(string)
 	postId := uuid.New()
 	createdAt := time.Now()
-	locationGiven := true
+	arguments := []interface{}{postId, userId, createPostRequest.Content, createdAt}
+	insertQuery := psql.Insert("alpha_schema.posts").Columns("post_id", "author_id", "content", "created_at")
 
-	if createPostRequest.Location == (schemas.LocationDTO{}) {
-		locationGiven = false
-	}
-
-	wantedValues := []string{"post_id", "author_id", "content", "created_at"}
-	wantedPlaceholders := []string{"$1", "$2", "$3", "$4"}
-	queryArgs := []interface{}{postId, userId, createPostRequest.Content, createdAt}
-
-	if locationGiven {
-		wantedValues = append(wantedValues, "longitude", "latitude", "accuracy")
-		wantedPlaceholders = append(wantedPlaceholders, "$5", "$6", "$7")
-		queryArgs = append(queryArgs, createPostRequest.Location.Longitude, createPostRequest.Location.Latitude,
+	if createPostRequest.Location != (schemas.LocationDTO{}) {
+		insertQuery = insertQuery.Columns("longitude", "latitude", "accuracy")
+		arguments = append(arguments, createPostRequest.Location.Longitude, createPostRequest.Location.Latitude,
 			createPostRequest.Location.Accuracy)
 	}
+	if postDto.Repost != nil {
+		insertQuery = insertQuery.Columns("repost_content", "repost_author_id", "repost_created_at")
+		arguments = append(arguments, postDto.Repost.Content, repostUserId, postDto.Repost.CreationDate)
+		// Check if the location in the original post is set
+		if postDto.Repost.Location != nil {
+			insertQuery = insertQuery.Columns("repost_longitude", "repost_latitude", "repost_accuracy")
+			arguments = append(arguments, postDto.Repost.Location.Longitude, postDto.Repost.Location.Latitude,
+				postDto.Repost.Location.Accuracy)
+		}
+	}
 
-	queryString := fmt.Sprintf("INSERT INTO alpha_schema.posts (%s) VALUES(%s)", strings.Join(wantedValues, ","),
-		strings.Join(wantedPlaceholders, ","))
-
-	_, err = tx.Exec(ctx, queryString, queryArgs...)
+	insertQuery = insertQuery.Values(arguments...)
+	sql, args, _ := insertQuery.ToSql()
+	_, err = tx.Exec(ctx, sql, args...)
 	if err != nil {
 		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return
@@ -102,31 +147,32 @@ func (handler *PostHandler) CreatePost(ctx *gin.Context) {
 
 	// Get the hashtags
 	hashtags := hashtagRegex.FindAllString(createPostRequest.Content, -1)
-
 	for _, hashtag := range hashtags {
 		hashtagId := uuid.New()
 
-		queryString := `INSERT INTO alpha_schema.hashtags (hashtag_id, content) VALUES($1, $2) 
-						ON CONFLICT (content) DO UPDATE SET content=alpha_schema.hashtags.content 
-						RETURNING hashtag_id`
-		if err := tx.QueryRow(ctx, queryString, hashtagId, hashtag).Scan(&hashtagId); err != nil {
+		queryString, args, _ := psql.Insert("alpha_schema.hashtags").Columns("hashtag_id", "content").
+			Values(hashtagId, hashtag).Suffix("ON CONFLICT (content) DO UPDATE SET content=alpha_schema.hashtags.content " +
+			"RETURNING hashtag_id").ToSql()
+		if err := tx.QueryRow(ctx, queryString, args...).Scan(&hashtagId); err != nil {
 			utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 			return
 		}
 
-		queryString = "INSERT INTO alpha_schema.many_posts_has_many_hashtags (post_id_posts, hashtag_id_hashtags) VALUES($1, $2)"
-		if _, err = tx.Exec(ctx, queryString, postId, hashtagId); err != nil {
+		queryString, args, _ = psql.Insert("alpha_schema.many_posts_has_many_hashtags").Columns("post_id_posts", "hashtag_id_hashtags").
+			Values(postId, hashtagId).ToSql()
+		if _, err = tx.Exec(ctx, queryString, args...); err != nil {
 			utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 			return
 		}
 	}
 
 	// Get the author
-	queryString = "SELECT username, nickname FROM alpha_schema.users WHERE user_id = $1"
-	row := tx.QueryRow(ctx, queryString, userId)
+	queryString, args, _ := psql.Select("username", "nickname", "profile_picture_url").
+		From("alpha_schema.users").Where("user_id = ?", userId).ToSql()
+	row := tx.QueryRow(ctx, queryString, args...)
 
 	author := &schemas.AuthorDTO{}
-	if err := row.Scan(&author.Username, &author.Nickname); err != nil {
+	if err := row.Scan(&author.Username, &author.Nickname, &author.ProfilePictureURL); err != nil {
 		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
@@ -138,17 +184,16 @@ func (handler *PostHandler) CreatePost(ctx *gin.Context) {
 
 	// Create the post DTO
 	post := &schemas.PostDTO{
-		PostId: postId.String(),
-		Author: schemas.AuthorDTO{
-			Username:          author.Username,
-			Nickname:          author.Nickname,
-			ProfilePictureURL: "",
-		},
+		PostId:       postId.String(),
+		Author:       *author,
 		Content:      createPostRequest.Content,
 		CreationDate: createdAt.Format(time.RFC3339),
+		Likes:        0,
+		Liked:        false,
+		Repost:       postDto.Repost,
 	}
 
-	if locationGiven {
+	if createPostRequest.Location != (schemas.LocationDTO{}) {
 		post.Location = &createPostRequest.Location
 	}
 
@@ -251,7 +296,7 @@ func (handler *PostHandler) QueryPosts(ctx *gin.Context) {
 		"INNER JOIN alpha_schema.users ON author_id = user_id " +
 		"INNER JOIN alpha_schema.many_posts_has_many_hashtags ON posts.post_id = post_id_posts " +
 		"INNER JOIN alpha_schema.hashtags ON hashtag_id = hashtag_id_hashtags " +
-		"LEFT OUTER JOIN alpha_schema.likes ON posts.post_id = likes.post_id" +
+		"LEFT OUTER JOIN alpha_schema.likes ON posts.post_id = likes.post_id " +
 		"WHERE hashtags.content LIKE $1 "
 
 	dataQueryArgs = append(dataQueryArgs, "%"+q+"%")
@@ -259,24 +304,28 @@ func (handler *PostHandler) QueryPosts(ctx *gin.Context) {
 	countQueryString := fmt.Sprintf(queryString, "COUNT(DISTINCT posts.post_id)")
 	placeholder := ""
 	if lastPostId == "" {
-		queryString += "ORDER BY created_at DESC LIMIT $2"
+		queryString += "GROUP BY posts.post_id, username, nickname, profile_picture_url " +
+			"ORDER BY created_at DESC LIMIT $2"
 		placeholder = "$3"
 	} else {
 		queryString += "AND posts.created_at < (SELECT created_at FROM alpha_schema.posts WHERE post_id = $2) " +
+			"GROUP BY posts.post_id, username, nickname, profile_picture_url " +
 			"ORDER BY created_at DESC LIMIT $3"
 		dataQueryArgs = append(dataQueryArgs, lastPostId)
 		placeholder = "$4"
 	}
+
 	dataQueryArgs = append(dataQueryArgs, limit)
 	claims := ctx.Value(utils.ClaimsKey.String()).(jwt.MapClaims)
 	userId := claims["sub"].(string)
-	dataQueryString := fmt.Sprintf(queryString, `DISTINCT posts.post_id, username, nickname, profile_picture_url,
-		posts.content, COUNT(likes.post_id) AS likes, CASE
-		WHEN EXISTS (
+
+	dataQueryString := fmt.Sprintf(queryString, `posts.post_id, username, nickname, profile_picture_url,
+		posts.content, COUNT(likes.post_id) AS likes, 
+		CASE WHEN EXISTS (
 			SELECT 1
 			FROM alpha_schema.likes
 			WHERE likes.user_id =`+placeholder+
-		`AND likes.post_id = posts.post_id
+		` AND likes.post_id = posts.post_id
 		) THEN TRUE ELSE FALSE
 		END AS liked, posts.created_at, posts.longitude, posts.latitude, posts.accuracy`)
 	dataQueryArgs = append(dataQueryArgs, userId)
