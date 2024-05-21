@@ -257,13 +257,15 @@ func (handler *PostHandler) QueryPosts(ctx *gin.Context) {
 	dataQueryArgs = append(dataQueryArgs, "%"+q+"%")
 	countQueryArgs = append(countQueryArgs, "%"+q+"%")
 	countQueryString := fmt.Sprintf(queryString, "COUNT(DISTINCT posts.post_id)")
-
+	placeholder := ""
 	if lastPostId == "" {
 		queryString += "ORDER BY created_at DESC LIMIT $2"
+		placeholder = "3"
 	} else {
 		queryString += "AND posts.created_at < (SELECT created_at FROM alpha_schema.posts WHERE post_id = $2) " +
 			"ORDER BY created_at DESC LIMIT $3"
 		dataQueryArgs = append(dataQueryArgs, lastPostId)
+		placeholder = "4"
 	}
 	dataQueryArgs = append(dataQueryArgs, limit)
 	claims := ctx.Value(utils.ClaimsKey.String()).(jwt.MapClaims)
@@ -273,8 +275,8 @@ func (handler *PostHandler) QueryPosts(ctx *gin.Context) {
 		WHEN EXISTS (
 			SELECT 1
 			FROM alpha_schema.likes
-			WHERE likes.user_id = $4
-			AND likes.post_id = posts.post_id
+			WHERE likes.user_id =`+placeholder+
+		`AND likes.post_id = posts.post_id
 		) THEN TRUE ELSE FALSE
 		END AS liked, posts.created_at, posts.longitude, posts.latitude, posts.accuracy`)
 	dataQueryArgs = append(dataQueryArgs, userId)
@@ -410,8 +412,8 @@ func retrieveFeed(ctx *gin.Context, tx pgx.Tx, publicFeedWanted bool,
     					WHERE subscriptions.subscriber_id` + fmt.Sprintf(" = $%d", currentCountQueryIndex)
 		currentCountQueryIndex++
 		dataQuery = `
-			SELECT posts.post_id, username, nickname, profile_picture_url, content, COUNT(likes.post_id) AS likes, CASE
-			WHEN EXISTS (
+			SELECT posts.post_id, username, nickname, profile_picture_url, content, COUNT(likes.post_id) AS likes, 
+			CASE WHEN EXISTS (
 				SELECT 1
 				FROM alpha_schema.likes
 				WHERE likes.user_id =` + fmt.Sprintf(" $%d", currentDataQueryIndex) + `
@@ -570,7 +572,6 @@ func (handler *PostHandler) CreateLike(ctx *gin.Context) {
 }
 
 func (handler *PostHandler) DeleteLike(ctx *gin.Context) {
-
 	var err error
 	tx := utils.BeginTransaction(ctx, handler.DatabaseManager.GetPool())
 	if tx == nil {
