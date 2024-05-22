@@ -271,14 +271,6 @@ func (handler *PostHandler) DeletePost(ctx *gin.Context) {
 // QueryPosts handles querying of posts based on the provided query parameters. It builds the database query dynamically,
 // retrieves the count and records of matching posts, and creates a paginated response.
 func (handler *PostHandler) QueryPosts(ctx *gin.Context) {
-	tx := utils.BeginTransaction(ctx, handler.DatabaseManager.GetPool())
-	if tx == nil {
-		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, errTransaction)
-		return
-	}
-	var err error
-	defer utils.RollbackTransaction(ctx, tx, err)
-
 	// Get the query parameters
 	q := ctx.Query(utils.QueryParamKey)
 	limit, lastPostId := parseLimitAndPostId(ctx.Query(utils.LimitParamKey), ctx.Query(utils.PostIdParamKey))
@@ -328,7 +320,7 @@ func (handler *PostHandler) QueryPosts(ctx *gin.Context) {
 	log.Println(dataQueryString)
 
 	// Get count and posts
-	count, posts, customErr, statusCode, err := retrieveCountAndRecords(ctx, tx, countQueryString, countQueryArgs,
+	count, posts, customErr, statusCode, err := handler.retrieveCountAndRecords(ctx, countQueryString, countQueryArgs,
 		dataQueryString, dataQueryArgs)
 	if err != nil {
 		utils.WriteAndLogError(ctx, customErr, statusCode, err)
@@ -337,27 +329,12 @@ func (handler *PostHandler) QueryPosts(ctx *gin.Context) {
 
 	// Create paginated response and send it
 	paginatedResponse := createPaginatedResponse(posts, lastPostId, limit, count)
-
-	if err := utils.CommitTransaction(ctx, tx); err != nil {
-		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
-	}
-
 	utils.WriteAndLogResponse(ctx, paginatedResponse, http.StatusOK)
 }
 
 // HandleGetFeedRequest handles requests to retrieve a feed. It determines the feed type (public or private),
 // retrieves the appropriate feed based on the user's subscriptions if needed, and creates a paginated response.
 func (handler *PostHandler) HandleGetFeedRequest(ctx *gin.Context) {
-	// Begin a new transaction
-	tx := utils.BeginTransaction(ctx, handler.DatabaseManager.GetPool())
-	if tx == nil {
-		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError,
-			errTransaction)
-		return
-	}
-	var err error
-	defer utils.RollbackTransaction(ctx, tx, err)
-
 	// Determine the feed type
 	publicFeedWanted, claims, err := determineFeedType(ctx, handler)
 	if err != nil {
@@ -365,17 +342,12 @@ func (handler *PostHandler) HandleGetFeedRequest(ctx *gin.Context) {
 	}
 
 	// Retrieve the feed based on the wanted feed type
-	posts, records, lastPostId, limit, err := retrieveFeed(ctx, tx, publicFeedWanted, claims)
+	posts, records, lastPostId, limit, err := handler.retrieveFeed(ctx, publicFeedWanted, claims)
 	if err != nil {
 		return
 	}
 
 	paginatedResponse := createPaginatedResponse(posts, lastPostId, limit, records)
-
-	if err := utils.CommitTransaction(ctx, tx); err != nil {
-		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
-	}
-
 	utils.WriteAndLogResponse(ctx, paginatedResponse, http.StatusOK)
 }
 
@@ -410,25 +382,26 @@ func determineFeedType(c *gin.Context, handler *PostHandler) (bool, jwt.Claims, 
 	publicFeedWanted := false
 
 	if authHeader == "" {
+		// If no JWT token is provided, we assume the user wants the global feed
+		return true, nil, nil
+	}
+
+	if !strings.HasPrefix(authHeader, bearerPrefix) || len(authHeader) <= len(bearerPrefix) {
+		err = errors.New("invalid authorization header")
+		utils.WriteAndLogError(c, goerrors.InvalidToken, http.StatusBadRequest, err)
+		return false, nil, err
+	}
+
+	jwtToken := authHeader[len(bearerPrefix):]
+	claims, err = handler.JWTManager.ValidateJWT(jwtToken)
+	if err != nil {
+		utils.WriteAndLogError(c, goerrors.Unauthorized, http.StatusUnauthorized, err)
+		return false, nil, err
+	}
+
+	feedType := c.Query(utils.FeedTypeParamKey)
+	if feedType == "global" {
 		publicFeedWanted = true
-	} else {
-		if !strings.HasPrefix(authHeader, bearerPrefix) || len(authHeader) <= len(bearerPrefix) {
-			err = errors.New("invalid authorization header")
-			utils.WriteAndLogError(c, goerrors.InvalidToken, http.StatusBadRequest, err)
-			return false, nil, err
-		}
-
-		jwtToken := authHeader[len(bearerPrefix):]
-		claims, err = handler.JWTManager.ValidateJWT(jwtToken)
-		if err != nil {
-			utils.WriteAndLogError(c, goerrors.Unauthorized, http.StatusUnauthorized, err)
-			return false, nil, err
-		}
-
-		feedType := c.Query(utils.FeedTypeParamKey)
-		if feedType == "global" {
-			publicFeedWanted = true
-		}
 	}
 
 	return publicFeedWanted, claims, nil
@@ -437,7 +410,7 @@ func determineFeedType(c *gin.Context, handler *PostHandler) (bool, jwt.Claims, 
 // RetrieveFeed retrieves the appropriate feed based on whether a public or private feed is requested.
 // It builds the database query dynamically based on the feed type and user input, retrieves the posts,
 // and returns the posts along with pagination details.
-func retrieveFeed(ctx *gin.Context, tx pgx.Tx, publicFeedWanted bool,
+func (handler *PostHandler) retrieveFeed(ctx *gin.Context, publicFeedWanted bool,
 	claims jwt.Claims) ([]*schemas.PostDTO, int, string, string, error) {
 	limit, lastPostId := parseLimitAndPostId(ctx.Query(utils.LimitParamKey), ctx.Query(utils.PostIdParamKey))
 	var userId string
@@ -492,7 +465,7 @@ func retrieveFeed(ctx *gin.Context, tx pgx.Tx, publicFeedWanted bool,
 	dataQuery, dataQueryArgs, _ := dataQueryBuilder.ToSql()
 	countQuery, countQueryArgs, _ := countQueryBuilder.ToSql()
 
-	count, posts, customErr, statusCode, err := retrieveCountAndRecords(ctx, tx, countQuery, countQueryArgs, dataQuery, dataQueryArgs)
+	count, posts, customErr, statusCode, err := handler.retrieveCountAndRecords(ctx, countQuery, countQueryArgs, dataQuery, dataQueryArgs)
 	if err != nil {
 		utils.WriteAndLogError(ctx, customErr, statusCode, err)
 		return nil, 0, "", "", err
@@ -503,10 +476,10 @@ func retrieveFeed(ctx *gin.Context, tx pgx.Tx, publicFeedWanted bool,
 
 // RetrieveCountAndRecords retrieves the count of posts that match the criteria and the corresponding post records.
 // It executes the provided count and data queries, processes the results, and returns the post count along with the post DTOs.
-func retrieveCountAndRecords(ctx *gin.Context, tx pgx.Tx, countQuery string, countQueryArgs []interface{},
+func (handler *PostHandler) retrieveCountAndRecords(ctx *gin.Context, countQuery string, countQueryArgs []interface{},
 	dataQuery string, dataQueryArgs []interface{}) (int, []*schemas.PostDTO, *goerrors.CustomError, int, error) {
 	// Get the count of posts in the database that match the criteria
-	row := tx.QueryRow(ctx, countQuery, countQueryArgs...)
+	row := handler.DatabaseManager.GetPool().QueryRow(ctx, countQuery, countQueryArgs...)
 
 	var count int
 	if err := row.Scan(&count); err != nil {
@@ -516,7 +489,7 @@ func retrieveCountAndRecords(ctx *gin.Context, tx pgx.Tx, countQuery string, cou
 	var rows pgx.Rows
 	var err error
 
-	rows, err = tx.Query(ctx, dataQuery, dataQueryArgs...)
+	rows, err = handler.DatabaseManager.GetPool().Query(ctx, dataQuery, dataQueryArgs...)
 	if err != nil {
 		return 0, nil, goerrors.DatabaseError, http.StatusInternalServerError, err
 	}
