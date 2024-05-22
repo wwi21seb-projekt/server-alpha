@@ -45,7 +45,7 @@ type PostHandler struct {
 var hashtagRegex = regexp.MustCompile(`#\w+`)
 var errTransaction = errors.New("error beginning transaction")
 var bearerPrefix = "Bearer "
-var psql = sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
+var post_psql = sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
 
 // NewPostHandler returns a new PostHandler with the provided managers and validator.
 func NewPostHandler(databaseManager *managers.DatabaseMgr, jwtManager *managers.JWTMgr) PostHdl {
@@ -79,7 +79,7 @@ func (handler *PostHandler) CreatePost(ctx *gin.Context) {
 		var accuracy pgtype.Int4
 		var createdAt pgtype.Timestamptz
 
-		repostedPost := psql.Select("content", "posts.created_at", "users.username", "users.nickname",
+		repostedPost := post_psql.Select("content", "posts.created_at", "users.username", "users.nickname",
 			"users.profile_picture_url", "longitude", "latitude", "accuracy", "repost_post_id").
 			From("alpha_schema.posts").
 			InnerJoin("alpha_schema.users ON author_id = user_id").
@@ -122,7 +122,7 @@ func (handler *PostHandler) CreatePost(ctx *gin.Context) {
 	postId := uuid.New()
 	createdAt := time.Now()
 	arguments := []interface{}{postId, userId, createPostRequest.Content, createdAt}
-	insertQuery := psql.Insert("alpha_schema.posts").Columns("post_id", "author_id", "content", "created_at")
+	insertQuery := post_psql.Insert("alpha_schema.posts").Columns("post_id", "author_id", "content", "created_at")
 
 	if createPostRequest.Location != (schemas.LocationDTO{}) {
 		insertQuery = insertQuery.Columns("longitude", "latitude", "accuracy")
@@ -147,7 +147,7 @@ func (handler *PostHandler) CreatePost(ctx *gin.Context) {
 	for _, hashtag := range hashtags {
 		hashtagId := uuid.New()
 
-		queryString, args, _ := psql.Insert("alpha_schema.hashtags").Columns("hashtag_id", "content").
+		queryString, args, _ := post_psql.Insert("alpha_schema.hashtags").Columns("hashtag_id", "content").
 			Values(hashtagId, hashtag).Suffix("ON CONFLICT (content) DO UPDATE SET content=alpha_schema.hashtags.content " +
 			"RETURNING hashtag_id").ToSql()
 		if err := tx.QueryRow(ctx, queryString, args...).Scan(&hashtagId); err != nil {
@@ -155,7 +155,7 @@ func (handler *PostHandler) CreatePost(ctx *gin.Context) {
 			return
 		}
 
-		queryString, args, _ = psql.Insert("alpha_schema.many_posts_has_many_hashtags").Columns("post_id_posts", "hashtag_id_hashtags").
+		queryString, args, _ = post_psql.Insert("alpha_schema.many_posts_has_many_hashtags").Columns("post_id_posts", "hashtag_id_hashtags").
 			Values(postId, hashtagId).ToSql()
 		if _, err = tx.Exec(ctx, queryString, args...); err != nil {
 			utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
@@ -164,7 +164,7 @@ func (handler *PostHandler) CreatePost(ctx *gin.Context) {
 	}
 
 	// Get the author
-	queryString, args, _ := psql.Select("username", "nickname", "profile_picture_url").
+	queryString, args, _ := post_psql.Select("username", "nickname", "profile_picture_url").
 		From("alpha_schema.users").Where("user_id = ?", userId).ToSql()
 	row := tx.QueryRow(ctx, queryString, args...)
 
@@ -273,7 +273,7 @@ func (handler *PostHandler) DeletePost(ctx *gin.Context) {
 func (handler *PostHandler) QueryPosts(ctx *gin.Context) {
 	// Get the query parameters
 	q := ctx.Query(utils.QueryParamKey)
-	limit, lastPostId := parseLimitAndPostId(ctx.Query(utils.LimitParamKey), ctx.Query(utils.PostIdParamKey))
+	limit, lastPostId := utils.ParseLimitAndPostId(ctx.Query(utils.LimitParamKey), ctx.Query(utils.PostIdParamKey))
 	limitInt, _ := strconv.Atoi(limit)
 
 	// Get the user ID from the JWT token
@@ -281,7 +281,7 @@ func (handler *PostHandler) QueryPosts(ctx *gin.Context) {
 	userId := claims["sub"].(string)
 
 	// Build dataQueryString
-	dataQueryBuilder := psql.Select().
+	dataQueryBuilder := post_psql.Select().
 		Columns("posts.post_id", "posts.content", "posts.created_at", "posts.longitude", "posts.latitude", "posts.accuracy").
 		Columns("users.username", "users.nickname", "users.profile_picture_url").
 		Columns("repost.content", "repost.created_at", "repost.longitude", "repost.latitude", "repost.accuracy").
@@ -306,7 +306,7 @@ func (handler *PostHandler) QueryPosts(ctx *gin.Context) {
 			"repost.longitude", "repost.latitude", "repost.accuracy", "repost_author.username", "repost_author.nickname", "repost_author.profile_picture_url").
 		OrderBy("posts.created_at DESC").Limit(uint64(limitInt))
 
-	countQueryBuilder := psql.
+	countQueryBuilder := post_psql.
 		Select("COUNT(DISTINCT posts.post_id)").
 		From("alpha_schema.posts").
 		InnerJoin("alpha_schema.users ON author_id = user_id").
@@ -412,11 +412,11 @@ func determineFeedType(c *gin.Context, handler *PostHandler) (bool, jwt.Claims, 
 // and returns the posts along with pagination details.
 func (handler *PostHandler) retrieveFeed(ctx *gin.Context, publicFeedWanted bool,
 	claims jwt.Claims) ([]*schemas.PostDTO, int, string, string, error) {
-	limit, lastPostId := parseLimitAndPostId(ctx.Query(utils.LimitParamKey), ctx.Query(utils.PostIdParamKey))
+	limit, lastPostId := utils.ParseLimitAndPostId(ctx.Query(utils.LimitParamKey), ctx.Query(utils.PostIdParamKey))
 	var userId string
 
-	countQueryBuilder := psql.Select("COUNT(*)").From("alpha_schema.posts")
-	dataQueryBuilder := psql.Select().
+	countQueryBuilder := post_psql.Select("COUNT(*)").From("alpha_schema.posts")
+	dataQueryBuilder := post_psql.Select().
 		Columns("posts.post_id", "posts.content", "posts.created_at", "posts.longitude", "posts.latitude", "posts.accuracy").
 		Columns("users.username", "users.nickname", "users.profile_picture_url").
 		Columns("repost.content", "repost.created_at", "repost.longitude", "repost.latitude", "repost.accuracy").
@@ -495,74 +495,12 @@ func (handler *PostHandler) retrieveCountAndRecords(ctx *gin.Context, countQuery
 	}
 
 	// Iterate over the rows and create the post DTOs
-	posts := make([]*schemas.PostDTO, 0)
-
-	for rows.Next() {
-		post := &schemas.PostDTO{}
-		var createdAt time.Time
-		var longitude, latitude, repostLongitude, repostLatitude pgtype.Float8
-		var accuracy, repostAccuracy pgtype.Int4
-		var repostContent, repostAuthorUsername, repostAuthorNickname, repostAuthorProfilePictureURL pgtype.Text
-		var repostCreatedAt pgtype.Timestamptz
-
-		if err := rows.Scan(&post.PostId, &post.Content, &createdAt, &longitude, &latitude, &accuracy,
-			&post.Author.Username, &post.Author.Nickname, &post.Author.ProfilePictureURL,
-			&repostContent, &repostCreatedAt, &repostLongitude, &repostLatitude, &repostAccuracy,
-			&repostAuthorUsername, &repostAuthorNickname, &repostAuthorProfilePictureURL,
-			&post.Likes, &post.Liked); err != nil {
-			return 0, nil, goerrors.DatabaseError, http.StatusInternalServerError, err
-		}
-
-		if longitude.Valid && latitude.Valid && accuracy.Valid {
-			post.Location = &schemas.LocationDTO{
-				Longitude: longitude.Float64,
-				Latitude:  latitude.Float64,
-				Accuracy:  accuracy.Int32,
-			}
-		}
-
-		if repostContent.Valid && repostCreatedAt.Valid && repostAuthorNickname.Valid &&
-			repostAuthorProfilePictureURL.Valid && repostAuthorUsername.Valid {
-			// Set the repost DTO
-			post.Repost = &schemas.RepostDTO{
-				Content:      repostContent.String,
-				CreationDate: repostCreatedAt.Time.Format(time.RFC3339),
-				Author: schemas.AuthorDTO{
-					Username:          repostAuthorUsername.String,
-					Nickname:          repostAuthorNickname.String,
-					ProfilePictureURL: repostAuthorProfilePictureURL.String,
-				},
-			}
-
-			if repostLongitude.Valid && repostLatitude.Valid && repostAccuracy.Valid {
-				post.Repost.Location = &schemas.LocationDTO{
-					Longitude: repostLongitude.Float64,
-					Latitude:  repostLatitude.Float64,
-					Accuracy:  repostAccuracy.Int32,
-				}
-			}
-		}
-
-		post.CreationDate = createdAt.Format(time.RFC3339)
-		posts = append(posts, post)
+	posts, err := utils.CreatePostDtoFromRows(rows)
+	if err != nil {
+		return 0, nil, goerrors.DatabaseError, http.StatusInternalServerError, err
 	}
 
 	return count, posts, nil, 0, nil
-}
-
-// parseLimitAndPostId parses the 'limit' and 'lastPostId' from the query parameters and provides default values if necessary.
-func parseLimitAndPostId(limit, lastPostId string) (string, string) {
-	intLimit, err := strconv.Atoi(limit)
-	if err != nil || intLimit > 10 || intLimit < 1 {
-		limit = "10"
-	}
-
-	postId, err := uuid.Parse(lastPostId)
-	if err != nil || postId == uuid.Nil {
-		lastPostId = ""
-	}
-
-	return limit, lastPostId
 }
 
 func (handler *PostHandler) CreateLike(ctx *gin.Context) {
@@ -576,6 +514,11 @@ func (handler *PostHandler) CreateLike(ctx *gin.Context) {
 
 	// Get the post ID from the URL
 	postId := ctx.Param(utils.PostIdParamKey)
+	if _, err := uuid.Parse(postId); err != nil {
+		utils.WriteAndLogError(ctx, goerrors.PostNotFound, http.StatusBadRequest, err)
+		return
+	}
+
 	// Get the user ID from the JWT token
 	claims := ctx.Value(utils.ClaimsKey.String()).(jwt.MapClaims)
 	userId := claims["sub"].(string)
