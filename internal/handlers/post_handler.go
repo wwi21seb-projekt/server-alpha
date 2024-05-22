@@ -17,6 +17,7 @@ import (
 	"github.com/wwi21seb-projekt/server-alpha/internal/utils"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -524,24 +525,24 @@ func (handler *PostHandler) CreateComment(ctx *gin.Context) {
 	postId := ctx.Param(utils.PostIdParamKey)
 	createdAt := time.Now()
 
-	// Check if the post exists
-	var postCount int
-
-	queryString := "SELECT COUNT(*) FROM alpha_schema.posts WHERE post_id = $1"
-	tx.QueryRow(ctx, queryString, postId).Scan(&postCount)
-	if postCount == 0 {
-		utils.WriteAndLogError(ctx, goerrors.PostNotFound, http.StatusNotFound, errors.New("post not found"))
+	queryString := "INSERT INTO alpha_schema.comments (comment_id, post_id, author_id, created_at, content) VALUES($1, $2, $3, $4, $5)"
+	queryArgs := []interface{}{commentId, postId, userId, createdAt, createCommentRequest.Content}
+	_, err = tx.Exec(ctx, queryString, queryArgs...)
+	if err != nil {
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
 
-	wantedValues := []string{"comment_id", "post_id", "author_id", "created_at", "content"}
-	wantedPlaceholders := []string{"$1", "$2", "$3", "$4", "$5"}
-	queryArgs := []interface{}{commentId, postId, userId, createdAt, createCommentRequest.Content}
-	queryString = fmt.Sprintf("INSERT INTO alpha_schema.comments (%s) VALUES(%s)", strings.Join(wantedValues, ","),
-		strings.Join(wantedPlaceholders, ","))
-
 	_, err = tx.Exec(ctx, queryString, queryArgs...)
 	if err != nil {
+		// Checking if the error is due to post not found
+		pgErr, ok := err.(*pgconn.PgError)
+		if ok && pgErr.Code == "23503" { // 23503 is the error code for foreign key violation
+			// Handling the error for post not found
+			utils.WriteAndLogError(ctx, goerrors.PostNotFound, http.StatusNotFound, errors.New("post not found"))
+			return
+		}
+		// Handling other database errors
 		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
@@ -562,14 +563,13 @@ func (handler *PostHandler) CreateComment(ctx *gin.Context) {
 	}
 
 	// Create the comment DTO
-	comment := &schemas.CommentCreationDTO{
-		PostId: postId,
+	comment := &schemas.CommentDTO{
+		Content: createCommentRequest.Content,
 		Author: schemas.AuthorDTO{
 			Username:          author.Username,
 			Nickname:          author.Nickname,
 			ProfilePictureURL: "",
 		},
-		Content: createCommentRequest.Content,
 	}
 
 	// Write the response
@@ -578,15 +578,6 @@ func (handler *PostHandler) CreateComment(ctx *gin.Context) {
 
 // GetComments handles requests to get the comments to a post.
 func (handler *PostHandler) GetComments(ctx *gin.Context) {
-
-	tx := utils.BeginTransaction(ctx, handler.DatabaseManager.GetPool())
-	if tx == nil {
-		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, errTransaction)
-		return
-	}
-	var err error
-	defer utils.RollbackTransaction(ctx, tx, err)
-
 	// Extract postId from the URL parameter
 	postId := ctx.Param(utils.PostIdParamKey)
 
@@ -599,11 +590,15 @@ func (handler *PostHandler) GetComments(ctx *gin.Context) {
 
 	var postCount int
 	queryString := "SELECT COUNT(*) FROM alpha_schema.posts WHERE post_id = $1"
-	tx.QueryRow(ctx, queryString, postId).Scan(&postCount)
+	handler.DatabaseManager.GetPool().QueryRow(ctx, queryString, postId).Scan(&postCount)
 	if postCount == 0 {
 		utils.WriteAndLogError(ctx, goerrors.PostNotFound, http.StatusNotFound, errors.New("post not found"))
 		return
 	}
+
+	var commentCount int
+	queryString = "SELECT COUNT(*) FROM alpha_schema.comments WHERE post_id = $1"
+	handler.DatabaseManager.GetPool().QueryRow(ctx, queryString, postId).Scan(&commentCount)
 
 	// Query to fetch comments related to the postId
 	queryString = `
@@ -612,8 +607,8 @@ func (handler *PostHandler) GetComments(ctx *gin.Context) {
         JOIN alpha_schema.users AS u ON c.author_id = u.user_id
         WHERE c.post_id = $1
         ORDER BY c.created_at DESC
-        LIMIT $2 OFFSET $3
-    `
+        LIMIT $2 OFFSET $3`
+
 	rows, err := handler.DatabaseManager.GetPool().Query(ctx, queryString, postId, limit, offset)
 	if err != nil {
 		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
@@ -642,11 +637,12 @@ func (handler *PostHandler) GetComments(ctx *gin.Context) {
 	}
 
 	// Build and send the paginated response
-	response := map[string]interface{}{
-		"records": comments,
-		"pagination": map[string]int{
-			"offset": offset,
-			"limit":  limit,
+	response := schemas.PaginatedResponse{
+		Records: comments,
+		Pagination: &schemas.Pagination{
+			Offset:  offset,
+			Limit:   limit,
+			Records: commentCount,
 		},
 	}
 	utils.WriteAndLogResponse(ctx, response, http.StatusOK)

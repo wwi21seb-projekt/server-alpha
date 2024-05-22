@@ -4,14 +4,16 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"fmt"
-	"github.com/wwi21seb-projekt/server-alpha/internal/managers"
-	"github.com/wwi21seb-projekt/server-alpha/internal/managers/mocks"
-	"github.com/wwi21seb-projekt/server-alpha/internal/schemas"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/wwi21seb-projekt/server-alpha/internal/managers"
+	"github.com/wwi21seb-projekt/server-alpha/internal/managers/mocks"
+	"github.com/wwi21seb-projekt/server-alpha/internal/schemas"
 
 	"github.com/gavv/httpexpect/v2"
 	"github.com/google/uuid"
@@ -546,13 +548,14 @@ func TestCreateComment(t *testing.T) {
 			postId,
 			schemas.CreateCommentRequest{Content: "This is a test comment."},
 			map[string]interface{}{
-				"postId": "3d6fa5c8-2e74-4d9c-9df2-5aeb6b59fcd5",
+				"commentId": "",
+				"content":   "This is a test comment.",
 				"author": map[string]interface{}{
 					"nickname":          "Test User",
 					"profilePictureURL": "",
 					"username":          "test_user",
 				},
-				"content": "This is a test comment.",
+				"creationDate": "",
 			},
 		},
 		{
@@ -628,10 +631,6 @@ func TestCreateComment(t *testing.T) {
 			switch tc.name {
 			case "Success":
 				poolMock.ExpectBegin()
-				// Expect the SELECT COUNT(*) query to check if the post exists
-				poolMock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM alpha_schema.posts WHERE post_id = \\$1").
-					WithArgs(tc.postId).
-					WillReturnRows(pgxmock.NewRows([]string{"count"}).AddRow(1))
 
 				// Expect the insert into comments table
 				poolMock.ExpectExec("INSERT INTO alpha_schema.comments").
@@ -646,10 +645,16 @@ func TestCreateComment(t *testing.T) {
 				poolMock.ExpectCommit()
 			case "Not Found":
 				poolMock.ExpectBegin()
-				// Expect the SELECT COUNT(*) query to check if the post exists
-				poolMock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM alpha_schema.posts WHERE post_id = \\$1").
-					WithArgs(tc.postId).
-					WillReturnRows(pgxmock.NewRows([]string{"count"}).AddRow(0))
+
+				// Expect the insert into comments table
+				poolMock.ExpectExec("INSERT INTO alpha_schema.comments").
+					WithArgs(pgxmock.AnyArg(), tc.postId, tc.userId, pgxmock.AnyArg(), tc.content.Content).
+					WillReturnError(&pgconn.PgError{
+						Code:    "23503", // 23503 is the error code for foreign key violation
+						Message: "insert or update on table \"comments\" violates foreign key constraint \"posts_fk\"",
+						Detail:  "Key (post_id)=(" + tc.postId + ") is not present in table \"posts\".",
+					})
+
 			}
 
 			expect := httpexpect.Default(t, server.URL)
@@ -701,13 +706,20 @@ func TestGetComments(t *testing.T) {
 					},
 				},
 				"pagination": map[string]interface{}{
-					"offset": 0,
-					"limit":  10,
+					"offset":  0,
+					"limit":   10,
+					"records": 1,
 				},
 			},
 			[]MockDBCall{
 				{
 					Query:         "SELECT COUNT(*) FROM alpha_schema.posts WHERE post_id = $1",
+					Args:          []interface{}{postId},
+					ReturnColumns: []string{"count"},
+					ReturnValues:  []interface{}{1},
+				},
+				{
+					Query:         "SELECT COUNT(*) FROM alpha_schema.comments WHERE post_id = $1",
 					Args:          []interface{}{postId},
 					ReturnColumns: []string{"count"},
 					ReturnValues:  []interface{}{1},
@@ -727,13 +739,20 @@ func TestGetComments(t *testing.T) {
 			map[string]interface{}{
 				"records": []map[string]interface{}{},
 				"pagination": map[string]interface{}{
-					"offset": 0,
-					"limit":  10,
+					"offset":  0,
+					"limit":   10,
+					"records": 1,
 				},
 			},
 			[]MockDBCall{
 				{
 					Query:         "SELECT COUNT(*) FROM alpha_schema.posts WHERE post_id = $1",
+					Args:          []interface{}{postId},
+					ReturnColumns: []string{"count"},
+					ReturnValues:  []interface{}{1},
+				},
+				{
+					Query:         "SELECT COUNT(*) FROM alpha_schema.comments WHERE post_id = $1",
 					Args:          []interface{}{postId},
 					ReturnColumns: []string{"count"},
 					ReturnValues:  []interface{}{1},
@@ -785,7 +804,6 @@ func TestGetComments(t *testing.T) {
 
 			// Get mock pool
 			poolMock := databaseMgrMock.GetPool().(pgxmock.PgxPoolIface)
-			poolMock.ExpectBegin()
 
 			// Mock database calls
 			for _, mock := range tc.dbCalls {
