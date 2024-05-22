@@ -81,12 +81,7 @@ CREATE TABLE alpha_schema.posts (
     longitude double precision,
     latitude double precision,
     accuracy integer,
-	repost_content varchar(256),
-	repost_created_at timestamptz,
-	repost_author_id uuid,
-	repost_longitude double precision,
-	repost_latitude double precision,
-	repost_accuracy integer,
+	repost_post_id uuid,
 	CONSTRAINT posts_pk PRIMARY KEY (post_id)
 );
 -- ddl-end --
@@ -105,13 +100,6 @@ CREATE TABLE alpha_schema.subscriptions (
 -- object: users_fk | type: CONSTRAINT --
 -- ALTER TABLE alpha_schema.posts DROP CONSTRAINT IF EXISTS users_fk CASCADE;
 ALTER TABLE alpha_schema.posts ADD CONSTRAINT users_fk FOREIGN KEY (author_id)
-REFERENCES alpha_schema.users (user_id) MATCH FULL
-ON DELETE CASCADE ON UPDATE CASCADE;
--- ddl-end --
-
--- object: repost_author_fk | type: CONSTRAINT --
--- ALTER TABLE alpha_schema.posts DROP CONSTRAINT IF EXISTS repost_author_fk CASCADE;
-ALTER TABLE alpha_schema.posts ADD CONSTRAINT repost_author_fk FOREIGN KEY (repost_author_id)
 REFERENCES alpha_schema.users (user_id) MATCH FULL
 ON DELETE CASCADE ON UPDATE CASCADE;
 -- ddl-end --
