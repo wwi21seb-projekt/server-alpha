@@ -199,3 +199,23 @@ ON DELETE CASCADE ON UPDATE CASCADE;
 -- ALTER TABLE alpha_schema.subscriptions DROP CONSTRAINT IF EXISTS subscriptions_uq CASCADE;
 ALTER TABLE alpha_schema.subscriptions ADD CONSTRAINT subscriptions_uq UNIQUE (subscriber_id,subscribee_id);
 -- ddl-end --
+
+-- object: alpha_schema.comments | type: TABLE --
+-- DROP TABLE IF EXISTS alpha_schema.comments CASCADE;
+CREATE TABLE alpha_schema.comments (
+	comment_id uuid NOT NULL,
+	content varchar(128) NOT NULL,
+	created_at timestamptz NOT NULL,
+	author_id uuid NOT NULL,
+	post_id uuid NOT NULL,
+	CONSTRAINT comments_pk PRIMARY KEY (comment_id)
+);
+
+ALTER TABLE alpha_schema.comments ADD CONSTRAINT posts_fk FOREIGN KEY (post_id)
+REFERENCES alpha_schema.posts (post_id) MATCH FULL
+ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE alpha_schema.comments ADD CONSTRAINT users_fk FOREIGN KEY (author_id)
+REFERENCES alpha_schema.users (user_id) MATCH FULL
+ON DELETE CASCADE ON UPDATE CASCADE;
+-- ddl-end --

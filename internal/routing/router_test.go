@@ -3,13 +3,18 @@ package routing
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
 	"testing"
+	"time"
 
+	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/wwi21seb-projekt/server-alpha/internal/managers"
 	"github.com/wwi21seb-projekt/server-alpha/internal/managers/mocks"
+	"github.com/wwi21seb-projekt/server-alpha/internal/schemas"
 
 	"github.com/gavv/httpexpect/v2"
 	"github.com/google/uuid"
@@ -230,6 +235,7 @@ type MockDBCall struct {
 	Args          []interface{}
 	ReturnColumns []string
 	ReturnValues  []interface{}
+	Error         error
 }
 
 type testCaseStructureSubscription struct {
@@ -510,6 +516,319 @@ func TestDeletePost(t *testing.T) {
 			if response.Raw().StatusCode != http.StatusNoContent {
 				response.JSON().IsEqual(tc.responseBody)
 			}
+
+			// Check if all expectations were met
+			if err := poolMock.ExpectationsWereMet(); err != nil {
+				t.Errorf("there were unfulfilled expectations: %s", err)
+			}
+		})
+	}
+}
+
+func TestCreateComment(t *testing.T) {
+	userId := "c45f92c4-0d64-4e2e-9939-370ec8a9c61c"
+	username := "test_user"
+	postId := "3d6fa5c8-2e74-4d9c-9df2-5aeb6b59fcd5"
+	profilePictureURL := "https://example.com/profile.jpg"
+
+	testCases := []struct {
+		name         string
+		status       int
+		jwtToken     string
+		userId       string
+		username     string
+		postId       string
+		content      schemas.CreateCommentRequest
+		responseBody map[string]interface{}
+	}{
+		{
+			"Success",
+			http.StatusCreated,
+			"",
+			userId,
+			username,
+			postId,
+			schemas.CreateCommentRequest{Content: "This is a test comment."},
+			map[string]interface{}{
+				"commentId": "",
+				"content":   "This is a test comment.",
+				"author": map[string]interface{}{
+					"nickname":          "Test User",
+					"profilePictureURL": profilePictureURL,
+					"username":          "test_user",
+				},
+				"creationDate": "",
+			},
+		},
+		{
+			"Unauthorized",
+			http.StatusUnauthorized,
+			"NonsenseToken",
+			userId,
+			username,
+			postId,
+			schemas.CreateCommentRequest{Content: "This is a test comment."},
+			map[string]interface{}{
+				"error": map[string]interface{}{
+					"code":        "ERR-014",
+					"http_status": 401,
+					"message":     "The request is unauthorized. Please login to your account.",
+					"title":       "Unauthorized",
+				},
+			},
+		},
+		{
+			"Not Found",
+			http.StatusNotFound,
+			"",
+			userId,
+			username,
+			postId,
+			schemas.CreateCommentRequest{Content: "This is a test comment."},
+			map[string]interface{}{
+				"error": map[string]interface{}{
+					"code":        "ERR-020",
+					"http_status": 404,
+					"message":     "The post was not found. Please check the post ID and try again.",
+					"title":       "PostNotFound",
+				},
+			},
+		},
+		{
+			"Bad Request",
+			http.StatusBadRequest,
+			"",
+			userId,
+			username,
+			postId,
+			schemas.CreateCommentRequest{Content: "This comment is too long. This comment is too long. This comment is too long. This comment is too long. This comment is too long. This comment is too long. This comment is too long. This comment is too long."},
+			map[string]interface{}{
+				"error": map[string]interface{}{
+					"code":        "ERR-001",
+					"http_status": 400,
+					"message":     "The request body is invalid. Please check the request body and try again.",
+					"title":       "BadRequest",
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+
+			databaseMgrMock, jwtManager, mailMgrMock := setupMocks(t)
+
+			router := InitRouter(databaseMgrMock, mailMgrMock, jwtManager)
+
+			server := httptest.NewServer(router)
+			defer server.Close()
+
+			// Generate JWT token if not already set
+			if tc.jwtToken == "" {
+				tc.jwtToken, _ = jwtManager.GenerateJWT(tc.userId, tc.username, false)
+			}
+
+			poolMock := databaseMgrMock.GetPool().(pgxmock.PgxPoolIface)
+
+			switch tc.name {
+			case "Success":
+				poolMock.ExpectBegin()
+
+				// Expect the insert into comments table
+				poolMock.ExpectExec("INSERT INTO alpha_schema.comments").
+					WithArgs(pgxmock.AnyArg(), tc.postId, tc.userId, pgxmock.AnyArg(), tc.content.Content).
+					WillReturnResult(pgxmock.NewResult("INSERT", 1))
+
+				// Expect the select from users table
+				poolMock.ExpectQuery("SELECT username, nickname, profile_picture_url FROM alpha_schema.users WHERE user_id = \\$1").
+					WithArgs(tc.userId).
+					WillReturnRows(pgxmock.NewRows([]string{"username", "nickname", "profile_picture_url"}).AddRow("test_user", "Test User", profilePictureURL))
+
+				poolMock.ExpectCommit()
+			case "Not Found":
+				poolMock.ExpectBegin()
+
+				// Expect the insert into comments table
+				poolMock.ExpectExec("INSERT INTO alpha_schema.comments").
+					WithArgs(pgxmock.AnyArg(), tc.postId, tc.userId, pgxmock.AnyArg(), tc.content.Content).
+					WillReturnError(&pgconn.PgError{
+						Code:    pgerrcode.ForeignKeyViolation,
+						Message: "insert or update on table \"comments\" violates foreign key constraint \"posts_fk\"",
+						Detail:  "Key (post_id)=(" + tc.postId + ") is not present in table \"posts\".",
+					})
+
+			}
+
+			expect := httpexpect.Default(t, server.URL)
+			request := expect.POST(fmt.Sprintf("/api/posts/%s/comments", tc.postId)).WithJSON(tc.content).WithHeader("Authorization", "Bearer "+tc.jwtToken)
+			response := request.Expect().Status(tc.status)
+			response.JSON().IsEqual(tc.responseBody)
+
+			if err := poolMock.ExpectationsWereMet(); err != nil {
+				t.Errorf("there were unfulfilled expectations: %s", err)
+			}
+		})
+	}
+}
+
+func TestGetComments(t *testing.T) {
+	postId := "1d4d2079-0423-4f8e-b063-8cf97553c306"
+	userId := "1752e5cc-77a4-4913-9924-63a439654a8e"
+	username := "testUser"
+
+	loc, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		fmt.Println("Error loading location:", err)
+		return
+	}
+
+	// Define test cases
+	testCases := []struct {
+		name         string
+		postId       string
+		status       int
+		responseBody map[string]interface{}
+		dbCalls      []MockDBCall
+	}{
+		{
+			"Success",
+			postId,
+			http.StatusOK,
+			map[string]interface{}{
+				"records": []map[string]interface{}{
+					{
+						"commentId": "67d701e4-6b10-4806-8f68-767d32f2aceb",
+						"content":   "This is a test comment",
+						"author": map[string]interface{}{
+							"username":          "testUser",
+							"nickname":          "",
+							"profilePictureURL": "",
+						},
+						"creationDate": time.Date(2024, 05, 20, 20, 50, 28, 0, loc),
+					},
+				},
+				"pagination": map[string]interface{}{
+					"offset":  0,
+					"limit":   10,
+					"records": 1,
+				},
+			},
+			[]MockDBCall{
+				{
+					Query:         "SELECT COUNT(*) FROM alpha_schema.posts WHERE post_id = $1",
+					Args:          []interface{}{postId},
+					ReturnColumns: []string{"count"},
+					ReturnValues:  []interface{}{1},
+				},
+				{
+					Query:         "SELECT COUNT(*) FROM alpha_schema.comments WHERE post_id = $1",
+					Args:          []interface{}{postId},
+					ReturnColumns: []string{"count"},
+					ReturnValues:  []interface{}{1},
+				},
+				{
+					Query:         "SELECT c.comment_id, c.content, c.created_at, u.username, u.nickname FROM alpha_schema.comments AS c JOIN alpha_schema.users AS u ON c.author_id = u.user_id WHERE c.post_id = $1 ORDER BY c.created_at DESC LIMIT $2 OFFSET $3",
+					Args:          []interface{}{postId, 10, 0},
+					ReturnColumns: []string{"comment_id", "content", "created_at", "username", "nickname"},
+					ReturnValues:  []interface{}{"67d701e4-6b10-4806-8f68-767d32f2aceb", "This is a test comment", time.Date(2024, 05, 20, 20, 50, 28, 0, loc), "testUser", ""},
+				},
+			},
+		},
+		{
+			"NoComments",
+			postId,
+			http.StatusOK,
+			map[string]interface{}{
+				"records": []map[string]interface{}{},
+				"pagination": map[string]interface{}{
+					"offset":  0,
+					"limit":   10,
+					"records": 1,
+				},
+			},
+			[]MockDBCall{
+				{
+					Query:         "SELECT COUNT(*) FROM alpha_schema.posts WHERE post_id = $1",
+					Args:          []interface{}{postId},
+					ReturnColumns: []string{"count"},
+					ReturnValues:  []interface{}{1},
+				},
+				{
+					Query:         "SELECT COUNT(*) FROM alpha_schema.comments WHERE post_id = $1",
+					Args:          []interface{}{postId},
+					ReturnColumns: []string{"count"},
+					ReturnValues:  []interface{}{1},
+				},
+				{
+					Query:         "SELECT c.comment_id, c.content, c.created_at, u.username, u.nickname FROM alpha_schema.comments AS c JOIN alpha_schema.users AS u ON c.author_id = u.user_id WHERE c.post_id = $1 ORDER BY c.created_at DESC LIMIT $2 OFFSET $3",
+					Args:          []interface{}{postId, 10, 0},
+					ReturnColumns: []string{"comment_id", "content", "created_at", "username", "nickname"},
+					ReturnValues:  nil,
+				},
+			},
+		},
+		{
+			"PostNotFound",
+			postId,
+			http.StatusNotFound,
+			map[string]interface{}{
+				"error": map[string]interface{}{
+					"code":        "ERR-020",
+					"http_status": 404,
+					"message":     "The post was not found. Please check the post ID and try again.",
+					"title":       "PostNotFound",
+				},
+			},
+			[]MockDBCall{
+				{
+					Query:         "SELECT COUNT(*) FROM alpha_schema.posts WHERE post_id = $1",
+					Args:          []interface{}{postId},
+					ReturnColumns: []string{"count"},
+					ReturnValues:  []interface{}{0},
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Setup mocks
+			databaseMgrMock, jwtManager, mailMgrMock := setupMocks(t)
+
+			// Initialize router
+			router := InitRouter(databaseMgrMock, mailMgrMock, jwtManager)
+
+			// Create test server
+			server := httptest.NewServer(router)
+			defer server.Close()
+
+			jwtToken, _ := jwtManager.GenerateJWT(userId, username, false)
+
+			// Get mock pool
+			poolMock := databaseMgrMock.GetPool().(pgxmock.PgxPoolIface)
+
+			// Mock database calls
+			for _, mock := range tc.dbCalls {
+				if mock.Query != "" {
+					if mock.Error != nil {
+						poolMock.ExpectQuery(regexp.QuoteMeta(mock.Query)).WithArgs(mock.Args...).WillReturnError(mock.Error)
+					} else {
+						rows := pgxmock.NewRows(mock.ReturnColumns)
+						if mock.ReturnValues != nil {
+							rows.AddRow(mock.ReturnValues...)
+						}
+						poolMock.ExpectQuery(regexp.QuoteMeta(mock.Query)).WithArgs(mock.Args...).WillReturnRows(rows)
+					}
+				}
+			}
+
+			// Create request and get response
+			expect := httpexpect.Default(t, server.URL)
+			request := expect.GET(fmt.Sprintf("/api/posts/%s/comments", tc.postId)).WithQuery("offset", 0).WithQuery("limit", 10).WithHeader("Authorization", "Bearer "+jwtToken)
+			response := request.Expect().Status(tc.status)
+
+			// Assert response
+			response.JSON().IsEqual(tc.responseBody)
 
 			// Check if all expectations were met
 			if err := poolMock.ExpectationsWereMet(); err != nil {

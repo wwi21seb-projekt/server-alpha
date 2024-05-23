@@ -148,6 +148,8 @@ func postRoutes(postRouter *gin.RouterGroup, postHdl handlers.PostHdl, jwtMgr ma
 	postRouter.POST("", middleware.ValidateAndSanitizeStruct(&schemas.CreatePostRequest{}), postHdl.CreatePost)
 	postRouter.GET("", postHdl.QueryPosts)
 	postRouter.DELETE("/:postId", postHdl.DeletePost)
+	postRouter.POST("/:postId/comments", middleware.ValidateAndSanitizeStruct(&schemas.CreateCommentRequest{}), postHdl.CreateComment)
+	postRouter.GET("/:postId/comments", postHdl.GetComments)
 	postRouter.POST("/:postId/likes", postHdl.CreateLike)
 	postRouter.DELETE("/:postId/likes", postHdl.DeleteLike)
 }
