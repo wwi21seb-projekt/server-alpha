@@ -16,6 +16,7 @@ import (
 	"github.com/wwi21seb-projekt/server-alpha/internal/schemas"
 	"github.com/wwi21seb-projekt/server-alpha/internal/utils"
 
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -527,17 +528,12 @@ func (handler *PostHandler) CreateComment(ctx *gin.Context) {
 
 	queryString := "INSERT INTO alpha_schema.comments (comment_id, post_id, author_id, created_at, content) VALUES($1, $2, $3, $4, $5)"
 	queryArgs := []interface{}{commentId, postId, userId, createdAt, createCommentRequest.Content}
-	_, err = tx.Exec(ctx, queryString, queryArgs...)
-	if err != nil {
-		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
-		return
-	}
 
 	_, err = tx.Exec(ctx, queryString, queryArgs...)
 	if err != nil {
 		// Checking if the error is due to post not found
 		pgErr, ok := err.(*pgconn.PgError)
-		if ok && pgErr.Code == "23503" { // 23503 is the error code for foreign key violation
+		if ok && pgErr.Code == pgerrcode.ForeignKeyViolation {
 			// Handling the error for post not found
 			utils.WriteAndLogError(ctx, goerrors.PostNotFound, http.StatusNotFound, errors.New("post not found"))
 			return
@@ -548,11 +544,11 @@ func (handler *PostHandler) CreateComment(ctx *gin.Context) {
 	}
 
 	// Get the author
-	queryString = "SELECT username, nickname FROM alpha_schema.users WHERE user_id = $1"
+	queryString = "SELECT username, nickname, profile_picture_url FROM alpha_schema.users WHERE user_id = $1"
 	row := tx.QueryRow(ctx, queryString, userId)
 
 	author := &schemas.AuthorDTO{}
-	if err := row.Scan(&author.Username, &author.Nickname); err != nil {
+	if err := row.Scan(&author.Username, &author.Nickname, &author.ProfilePictureURL); err != nil {
 		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return
 	}
@@ -568,7 +564,7 @@ func (handler *PostHandler) CreateComment(ctx *gin.Context) {
 		Author: schemas.AuthorDTO{
 			Username:          author.Username,
 			Nickname:          author.Nickname,
-			ProfilePictureURL: "",
+			ProfilePictureURL: author.ProfilePictureURL,
 		},
 	}
 
@@ -621,7 +617,7 @@ func (handler *PostHandler) GetComments(ctx *gin.Context) {
 		var comment schemas.CommentDTO
 		var author schemas.AuthorDTO
 
-		var commentId uuid.UUID
+		var commentId string
 		var createdAt time.Time
 
 		if err := rows.Scan(&commentId, &comment.Content, &createdAt, &author.Username, &author.Nickname); err != nil {
@@ -629,7 +625,7 @@ func (handler *PostHandler) GetComments(ctx *gin.Context) {
 			return
 		}
 
-		comment.CommentId = commentId.String()
+		comment.CommentId = commentId
 		comment.Author = author
 		comment.CreationDate = createdAt.Format(time.RFC3339)
 

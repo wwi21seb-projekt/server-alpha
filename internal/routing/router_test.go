@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/wwi21seb-projekt/server-alpha/internal/managers"
 	"github.com/wwi21seb-projekt/server-alpha/internal/managers/mocks"
@@ -526,8 +527,9 @@ func TestDeletePost(t *testing.T) {
 
 func TestCreateComment(t *testing.T) {
 	userId := "c45f92c4-0d64-4e2e-9939-370ec8a9c61c"
-	username := "testUser"
+	username := "test_user"
 	postId := "3d6fa5c8-2e74-4d9c-9df2-5aeb6b59fcd5"
+	profilePictureURL := "https://example.com/profile.jpg"
 
 	testCases := []struct {
 		name         string
@@ -552,7 +554,7 @@ func TestCreateComment(t *testing.T) {
 				"content":   "This is a test comment.",
 				"author": map[string]interface{}{
 					"nickname":          "Test User",
-					"profilePictureURL": "",
+					"profilePictureURL": profilePictureURL,
 					"username":          "test_user",
 				},
 				"creationDate": "",
@@ -638,9 +640,9 @@ func TestCreateComment(t *testing.T) {
 					WillReturnResult(pgxmock.NewResult("INSERT", 1))
 
 				// Expect the select from users table
-				poolMock.ExpectQuery("SELECT username, nickname FROM alpha_schema.users WHERE user_id = \\$1").
+				poolMock.ExpectQuery("SELECT username, nickname, profile_picture_url FROM alpha_schema.users WHERE user_id = \\$1").
 					WithArgs(tc.userId).
-					WillReturnRows(pgxmock.NewRows([]string{"username", "nickname"}).AddRow("test_user", "Test User"))
+					WillReturnRows(pgxmock.NewRows([]string{"username", "nickname", "profile_picture_url"}).AddRow("test_user", "Test User", profilePictureURL))
 
 				poolMock.ExpectCommit()
 			case "Not Found":
@@ -650,7 +652,7 @@ func TestCreateComment(t *testing.T) {
 				poolMock.ExpectExec("INSERT INTO alpha_schema.comments").
 					WithArgs(pgxmock.AnyArg(), tc.postId, tc.userId, pgxmock.AnyArg(), tc.content.Content).
 					WillReturnError(&pgconn.PgError{
-						Code:    "23503", // 23503 is the error code for foreign key violation
+						Code:    pgerrcode.ForeignKeyViolation,
 						Message: "insert or update on table \"comments\" violates foreign key constraint \"posts_fk\"",
 						Detail:  "Key (post_id)=(" + tc.postId + ") is not present in table \"posts\".",
 					})
