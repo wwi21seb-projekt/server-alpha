@@ -81,6 +81,7 @@ CREATE TABLE alpha_schema.posts (
     longitude double precision,
     latitude double precision,
     accuracy integer,
+	repost_post_id uuid,
 	CONSTRAINT posts_pk PRIMARY KEY (post_id)
 );
 -- ddl-end --

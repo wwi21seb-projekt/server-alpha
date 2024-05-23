@@ -134,10 +134,10 @@ func userRoutes(userRouter *gin.RouterGroup, userHdl handlers.UserHdl, jwtMgr ma
 	userRouter.POST("/refresh", middleware.ValidateAndSanitizeStruct(&schemas.RefreshTokenRequest{}), userHdl.RefreshToken)
 	userRouter.POST("/:username/activate", middleware.ValidateAndSanitizeStruct(&schemas.ActivationRequest{}), userHdl.ActivateUser)
 	userRouter.DELETE("/:username/activate", userHdl.ResendToken)
-	userRouter.GET("/:username/feed", userHdl.RetrieveUserPosts)
 	// The following routes require the user to be authenticated
 	userRouter.Use(jwtMgr.JWTMiddleware())
 	userRouter.GET("/:username", userHdl.HandleGetUserRequest)
+	userRouter.GET("/:username/feed", userHdl.RetrieveUserPosts)
 	userRouter.GET("", userHdl.SearchUsers)
 	userRouter.PATCH("", middleware.ValidateAndSanitizeStruct(&schemas.ChangePasswordRequest{}), userHdl.ChangePassword)
 	userRouter.PUT("", middleware.ValidateAndSanitizeStruct(&schemas.ChangeTrivialInformationRequest{}), userHdl.ChangeTrivialInformation)
@@ -150,6 +150,8 @@ func postRoutes(postRouter *gin.RouterGroup, postHdl handlers.PostHdl, jwtMgr ma
 	postRouter.DELETE("/:postId", postHdl.DeletePost)
 	postRouter.POST("/:postId/comments", middleware.ValidateAndSanitizeStruct(&schemas.CreateCommentRequest{}), postHdl.CreateComment)
 	postRouter.GET("/:postId/comments", postHdl.GetComments)
+	postRouter.POST("/:postId/likes", postHdl.CreateLike)
+	postRouter.DELETE("/:postId/likes", postHdl.DeleteLike)
 }
 
 func subscriptionsRoutes(subscriptionsRouter *gin.RouterGroup, subscriptionHdl handlers.SubscriptionHdl) {

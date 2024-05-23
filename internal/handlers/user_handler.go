@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	sq "github.com/Masterminds/squirrel"
 	"github.com/gin-gonic/gin"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -52,6 +53,7 @@ func NewUserHandler(databaseManager *managers.DatabaseMgr, jwtManager *managers.
 }
 
 var errInvalidToken = errors.New("invalid token")
+var user_psql = sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
 
 // RegisterUser handles the registration of a new user by validating the request, checking for username or email availability,
 // hashing the password, inserting the user into the database, generating and sending an activation token, and committing the transaction.
@@ -499,7 +501,6 @@ func (handler *UserHandler) RefreshToken(ctx *gin.Context) {
 	utils.WriteAndLogResponse(ctx, tokenDto, http.StatusOK)
 }
 
-// RetrieveUserPosts handles fetching posts of a user based on the username in the path parameter and sends a paginated list of posts.
 func retrieveUserIdAndEmail(ctx *gin.Context, tx pgx.Tx, username string) (string, uuid.UUID, bool) {
 	// Get the user ID
 	queryString := "SELECT email, user_id FROM alpha_schema.users WHERE username = $1"
@@ -696,6 +697,7 @@ func generateTokenPair(handler *UserHandler, userId, username string) (*schemas.
 	return tokenPair, nil
 }
 
+// RetrieveUserPosts handles fetching posts of a user based on the username in the path parameter and sends a paginated list of posts.
 func (handler *UserHandler) RetrieveUserPosts(ctx *gin.Context) {
 	// Get the username from URL parameter
 	username := ctx.Param(utils.UsernameKey)
@@ -705,12 +707,30 @@ func (handler *UserHandler) RetrieveUserPosts(ctx *gin.Context) {
 		utils.WriteAndLogError(ctx, goerrors.BadRequest, http.StatusBadRequest, err)
 		return
 	}
+	claims := ctx.Value(utils.ClaimsKey.String()).(jwt.MapClaims)
+	userId := claims["sub"].(string)
 
-	// Retrieve posts from database
-	queryString := "SELECT p.post_id, p.content, p.created_at, p.longitude, p.latitude, p.accuracy " +
-		"FROM alpha_schema.posts p JOIN alpha_schema.users u on p.author_id = u.user_id " +
-		"WHERE u.username = $1 ORDER BY p.created_at DESC"
-	rows, err := handler.DatabaseManager.GetPool().Query(ctx, queryString, username)
+	queryStringBuider := user_psql.Select().
+		Columns("posts.post_id", "posts.content", "posts.created_at", "posts.longitude", "posts.latitude", "posts.accuracy").
+		Columns("users.username", "users.nickname", "users.profile_picture_url").
+		Columns("repost.content", "repost.created_at", "repost.longitude", "repost.latitude", "repost.accuracy").
+		Columns("repost_author.username", "repost_author.nickname", "repost_author.profile_picture_url").
+		Column("COUNT(likes.post_id) AS likes").
+		Column("CASE WHEN EXISTS (SELECT 1 FROM alpha_schema.likes WHERE likes.user_id = ? AND likes.post_id = posts.post_id) THEN TRUE ELSE FALSE END AS liked", userId).
+		From("alpha_schema.posts").
+		InnerJoin("alpha_schema.users ON posts.author_id = user_id").
+		InnerJoin("alpha_schema.many_posts_has_many_hashtags ON posts.post_id = post_id_posts").
+		InnerJoin("alpha_schema.hashtags ON hashtag_id = hashtag_id_hashtags").
+		LeftJoin("alpha_schema.likes ON posts.post_id = likes.post_id").
+		LeftJoin("alpha_schema.posts AS repost ON posts.repost_post_id = repost.post_id").
+		LeftJoin("alpha_schema.users AS repost_author ON repost.author_id = repost_author.user_id").
+		Where("users.username = ?", username).
+		GroupBy("posts.post_id", "users.username", "users.nickname", "users.profile_picture_url", "repost.content", "repost.created_at",
+			"repost.longitude", "repost.latitude", "repost.accuracy", "repost_author.username", "repost_author.nickname", "repost_author.profile_picture_url").
+		OrderBy("posts.created_at DESC").Limit(uint64(limit))
+
+	queryString, args, _ := queryStringBuider.ToSql()
+	rows, err := handler.DatabaseManager.GetPool().Query(ctx, queryString, args...)
 	if err != nil {
 		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
 		return
@@ -718,31 +738,10 @@ func (handler *UserHandler) RetrieveUserPosts(ctx *gin.Context) {
 	defer rows.Close()
 
 	// Create a list of posts
-	posts := make([]schemas.PostDTO, 0)
-	var createdAt pgtype.Timestamptz
-	var longitude, latitude pgtype.Float8
-	var accuracy pgtype.Int4
-
-	for rows.Next() {
-		post := schemas.PostDTO{}
-		if err := rows.Scan(&post.PostId, &post.Content, &createdAt, &longitude, &latitude, &accuracy); err != nil {
-			utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
-			return
-		}
-
-		if longitude.Valid && latitude.Valid {
-			post.Location = &schemas.LocationDTO{
-				Longitude: longitude.Float64,
-				Latitude:  latitude.Float64,
-			}
-		}
-
-		if accuracy.Valid {
-			post.Location.Accuracy = accuracy.Int32
-		}
-
-		post.CreationDate = createdAt.Time.Format(time.RFC3339)
-		posts = append(posts, post)
+	posts, err := utils.CreatePostDtoFromRows(rows)
+	if err != nil {
+		utils.WriteAndLogError(ctx, goerrors.DatabaseError, http.StatusInternalServerError, err)
+		return
 	}
 
 	utils.SendPaginatedResponse(ctx, posts, offset, limit, len(posts))
