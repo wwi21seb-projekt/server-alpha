@@ -20,7 +20,7 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.9.0
 	github.com/truemail-rb/truemail-go v1.1.3
-	github.com/wwi21seb-projekt/errors-go v0.4.0
+	github.com/wwi21seb-projekt/errors-go v0.5.0
 	golang.org/x/crypto v0.23.0
 )
 
@@ -56,7 +56,6 @@ require (
 	github.com/huandu/xstrings v1.4.0 // indirect
 	github.com/imdario/mergo v0.3.16 // indirect
 	github.com/imkira/go-interpol v1.1.0 // indirect
-	github.com/jackc/pgerrcode v0.0.0-20240316143900-6e2875d9b438 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20231201235250-de7065d80cb9 // indirect
 	github.com/jackc/puddle/v2 v2.2.1 // indirect
